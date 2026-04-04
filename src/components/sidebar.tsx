@@ -8,6 +8,7 @@ const navItems = [
   { icon: "🗓️", label: "Itinerary", href: "/itinerary" },
   { icon: "💰", label: "Expenses", href: "/expenses" },
   { icon: "📎", label: "Vault", href: "/vault" },
+  { icon: "🗺️", label: "Map", href: "/map" },
   { icon: "🗳️", label: "Polls", href: "/dashboard" },
   { icon: "🧰", label: "Toolkit", href: "/dashboard" },
 ];
