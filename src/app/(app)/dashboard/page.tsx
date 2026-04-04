@@ -1,5 +1,6 @@
 import { members, currentTrip, recentExpenses, itinerary, debts } from "@/lib/mock-data";
 import Link from "next/link";
+import DashboardHeader from "@/components/dashboard-header";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -134,14 +135,7 @@ export default function DashboardPage() {
       {/* ---------------------------------------------------------- */}
       <header className="sticky top-0 z-50 glass shadow-float">
         <div className="mx-auto max-w-7xl px-6 sm:px-10 flex items-center justify-between h-20">
-          <div>
-            <h1 className="font-display text-2xl font-extrabold tracking-editorial">
-              Dashboard
-            </h1>
-            <p className="text-sm text-on-surface-variant font-body mt-0.5">
-              Welcome back, Anupriyam. Your Thailand trip is coming up!
-            </p>
-          </div>
+          <DashboardHeader />
 
           <div className="flex items-center gap-5">
             {/* Notification bell */}

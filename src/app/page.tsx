@@ -56,12 +56,20 @@ export default function LandingPage() {
             <a href="#destinations" className="hover:text-primary transition-colors">Destinations</a>
           </div>
 
-          <Link
-            href="/dashboard"
-            className="gradient-cta text-on-primary text-sm font-semibold px-5 py-2 rounded-full shadow-float hover:opacity-90 transition-opacity"
-          >
-            Enter App
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/login"
+              className="text-sm font-semibold text-on-surface-variant hover:text-primary transition-colors"
+            >
+              Sign In
+            </Link>
+            <Link
+              href="/signup"
+              className="gradient-cta text-on-primary text-sm font-semibold px-5 py-2 rounded-full shadow-float hover:opacity-90 transition-opacity"
+            >
+              Get Started
+            </Link>
+          </div>
         </div>
       </nav>
 
@@ -161,7 +169,7 @@ export default function LandingPage() {
           {/* CTA Buttons */}
           <div className="mt-12 flex flex-wrap gap-4">
             <Link
-              href="/dashboard"
+              href="/signup"
               className="bg-white text-primary font-semibold px-8 py-3.5 rounded-full shadow-float hover:bg-white/90 transition-colors text-sm"
             >
               Join the Journey
@@ -444,10 +452,10 @@ export default function LandingPage() {
 
           <div className="mt-10 flex flex-wrap justify-center gap-4">
             <Link
-              href="/dashboard"
+              href="/signup"
               className="bg-white text-on-surface font-semibold px-8 py-3.5 rounded-full hover:bg-white/90 transition-colors text-sm"
             >
-              Step into the Map
+              Start Planning
             </Link>
             <a
               href="#"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 const steps = [
   { number: 1, label: "Basic Info" },
@@ -36,6 +37,7 @@ const coverGradients = [
 ];
 
 export default function NewTripPage() {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
   const [selectedAccommodation, setSelectedAccommodation] = useState<string[]>([]);
@@ -206,7 +208,10 @@ export default function NewTripPage() {
                 >
                   &larr; Back
                 </button>
-                <button className="gradient-cta text-on-primary font-semibold text-sm px-8 py-3 rounded-full shadow-float hover:opacity-90 transition-opacity">
+                <button
+                  onClick={() => router.push("/dashboard")}
+                  className="gradient-cta text-on-primary font-semibold text-sm px-8 py-3 rounded-full shadow-float hover:opacity-90 transition-opacity"
+                >
                   Create Trip &rarr;
                 </button>
               </>
