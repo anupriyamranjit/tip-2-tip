@@ -53,6 +53,14 @@ async function request<T>(path: string, options: RequestInit): Promise<T> {
 
   const data = await res.json();
 
+  if (res.status === 401) {
+    // Token is invalid or user no longer exists — clear session and redirect
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("user");
+    window.location.href = "/login";
+    throw new Error("Session expired. Please log in again.");
+  }
+
   if (!res.ok) {
     throw new Error(data.error || "Something went wrong");
   }
