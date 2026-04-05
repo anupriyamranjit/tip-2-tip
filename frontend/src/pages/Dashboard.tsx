@@ -141,6 +141,7 @@ function TripCard(props: {
   trip: Trip;
   formatDateRange: (s: string | null, e: string | null) => string;
 }) {
+  const navigate = useNavigate();
   const coverImages = [
     "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=600&q=80",
     "https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=600&q=80",
@@ -153,7 +154,7 @@ function TripCard(props: {
     coverImages[Math.abs(hashCode(props.trip.id)) % coverImages.length];
 
   return (
-    <div class="trip-card">
+    <div class="trip-card" onClick={() => navigate(`/trips/${props.trip.id}`)}>
       <div
         class="trip-card-image"
         style={{ "background-image": `url(${coverUrl()})` }}

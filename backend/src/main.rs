@@ -1,3 +1,4 @@
+mod activity_pins;
 mod auth;
 mod trips;
 
@@ -59,6 +60,7 @@ async fn main() {
     let app = axum::Router::new()
         .nest("/api/v1/auth", auth::router())
         .nest("/api/v1/trips", trips::router())
+        .nest("/api/v1/trips", activity_pins::router())
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);

@@ -105,3 +105,79 @@ export function createTrip(
     body: JSON.stringify(payload),
   });
 }
+
+/* ── Activity Pins ── */
+
+export interface ActivityPin {
+  id: string;
+  trip_id: string;
+  user_id: string;
+  title: string;
+  description: string | null;
+  latitude: number;
+  longitude: number;
+  category: string;
+  status: string;
+  image_url: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface CreatePinPayload {
+  title: string;
+  description?: string;
+  latitude: number;
+  longitude: number;
+  category?: string;
+  image_url?: string;
+}
+
+export interface UpdatePinPayload {
+  title?: string;
+  description?: string;
+  latitude?: number;
+  longitude?: number;
+  category?: string;
+  status?: string;
+  image_url?: string;
+}
+
+export function listPins(
+  token: string,
+  tripId: string
+): Promise<{ pins: ActivityPin[] }> {
+  return authRequest(`/trips/${tripId}/pins`, token);
+}
+
+export function createPin(
+  token: string,
+  tripId: string,
+  payload: CreatePinPayload
+): Promise<ActivityPin> {
+  return authRequest(`/trips/${tripId}/pins`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updatePin(
+  token: string,
+  tripId: string,
+  pinId: string,
+  payload: UpdatePinPayload
+): Promise<ActivityPin> {
+  return authRequest(`/trips/${tripId}/pins/${pinId}`, token, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deletePin(
+  token: string,
+  tripId: string,
+  pinId: string
+): Promise<void> {
+  return authRequest(`/trips/${tripId}/pins/${pinId}`, token, {
+    method: "DELETE",
+  });
+}

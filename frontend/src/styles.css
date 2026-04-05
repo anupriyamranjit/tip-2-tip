@@ -671,3 +671,439 @@ body {
 .form-group textarea:focus {
   box-shadow: inset 0 0 0 1.5px var(--primary);
 }
+
+/* ── Select (for modal form) ── */
+.form-group select {
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.9rem;
+  font-family: var(--font-body);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--surface-lowest);
+  color: var(--on-surface);
+  outline: none;
+  transition: box-shadow 0.2s;
+  box-shadow: inset 0 0 0 1px rgba(195,198,215,0.15);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234A5C68' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.85rem center;
+}
+
+.form-group select:focus {
+  box-shadow: inset 0 0 0 1.5px var(--primary);
+}
+
+/* ── Trip View Layout ── */
+.trip-view-layout {
+  display: flex;
+  min-height: 100vh;
+  background: var(--surface);
+}
+
+.trip-nav-sidebar {
+  width: 200px;
+  min-height: 100vh;
+  background: var(--surface-low);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-xl) 0;
+  flex-shrink: 0;
+}
+
+.trip-nav-link {
+  display: flex !important;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.nav-icon {
+  font-size: 1rem;
+  width: 1.2rem;
+  text-align: center;
+}
+
+.disabled-link {
+  opacity: 0.4;
+  cursor: not-allowed !important;
+}
+
+.disabled-link:hover {
+  background: transparent !important;
+  color: var(--on-surface-muted) !important;
+}
+
+.trip-info-card {
+  padding: var(--space-md);
+  margin: 0 var(--space-md);
+  background: var(--surface-lowest);
+  border-radius: var(--radius-lg);
+  margin-top: auto;
+}
+
+.trip-info-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--on-surface);
+  margin-bottom: var(--space-xs);
+}
+
+.trip-info-dates {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--on-surface-muted);
+  letter-spacing: 0.02em;
+}
+
+/* ── Trip Header ── */
+.trip-header {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: var(--space-md) var(--space-xl);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 10;
+  position: relative;
+}
+
+.trip-header-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.3rem;
+  letter-spacing: -0.02em;
+  color: var(--on-surface);
+  margin: 0;
+}
+
+.trip-header-dates {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--on-surface-muted);
+}
+
+.trip-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.trip-member-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--on-surface-muted);
+  padding: 0.35rem 0.8rem;
+  background: var(--surface-low);
+  border-radius: var(--radius-full);
+}
+
+/* ── Trip Main Content ── */
+.trip-main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-width: 0;
+}
+
+/* ── Map Container ── */
+.map-container {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.map-container .leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: var(--surface-low);
+}
+
+.map-hint {
+  position: absolute;
+  bottom: var(--space-lg);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0.5rem 1.2rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--on-surface-muted);
+  z-index: 5;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(7, 30, 39, 0.06);
+}
+
+/* ── Glassmorphic Map Pin Markers ── */
+.map-pin-wrapper {
+  background: none !important;
+  border: none !important;
+}
+
+.map-pin-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: var(--radius-md);
+  padding: 4px 10px;
+  box-shadow: 0 8px 32px rgba(7, 30, 39, 0.08);
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--on-surface);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.map-pin-icon:hover {
+  transform: scale(1.05);
+  box-shadow: 0 12px 40px rgba(7, 30, 39, 0.12);
+}
+
+.map-pin-icon.pin-confirmed {
+  background: rgba(0, 106, 98, 0.12);
+  color: var(--tertiary);
+}
+
+.map-pin-icon.pin-proposed {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.pin-emoji {
+  font-size: 0.9rem;
+}
+
+.pin-label {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Pin Popup Styling ── */
+.pin-popup-container .leaflet-popup-content-wrapper {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(7, 30, 39, 0.1);
+  border: none;
+}
+
+.pin-popup-container .leaflet-popup-tip {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.pin-popup {
+  padding: var(--space-xs);
+}
+
+.pin-popup-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--on-surface);
+  margin-bottom: var(--space-xs);
+}
+
+.pin-popup-desc {
+  font-size: 0.8rem;
+  color: var(--on-surface-muted);
+  margin-bottom: var(--space-sm);
+  line-height: 1.4;
+}
+
+.pin-popup-meta {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  margin-bottom: var(--space-xs);
+}
+
+.pin-popup-category {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+}
+
+.pin-popup-status {
+  position: static;
+}
+
+.pin-popup-author {
+  font-size: 0.68rem;
+  color: var(--on-surface-muted);
+  font-style: italic;
+}
+
+/* ── Pin List Panel (right sidebar) ── */
+.pin-list-panel {
+  width: 320px;
+  min-height: 100vh;
+  background: var(--surface-lowest);
+  overflow-y: auto;
+  padding: var(--space-lg);
+  flex-shrink: 0;
+  z-index: 2;
+}
+
+.pin-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-lg);
+}
+
+.pin-panel-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: var(--on-surface);
+}
+
+.pin-count-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+  padding: 0.2rem 0.6rem;
+  background: rgba(0, 63, 163, 0.08);
+  border-radius: var(--radius-full);
+}
+
+.pin-empty-state {
+  text-align: center;
+  padding: var(--space-2xl) var(--space-md);
+}
+
+.pin-empty-state p {
+  color: var(--on-surface-muted);
+  font-size: 0.9rem;
+}
+
+.pin-empty-hint {
+  font-size: 0.78rem !important;
+  margin-top: var(--space-sm);
+  opacity: 0.7;
+}
+
+.pin-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* ── Pin Card ── */
+.pin-card {
+  background: var(--surface-low);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.pin-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(7, 30, 39, 0.06);
+}
+
+.pin-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.pin-card-emoji {
+  font-size: 1.3rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.pin-card-title-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.pin-card-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--on-surface);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.pin-card-category {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+}
+
+.pin-card-desc {
+  font-size: 0.78rem;
+  color: var(--on-surface-muted);
+  line-height: 1.4;
+  margin-bottom: var(--space-sm);
+}
+
+.pin-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pin-card-author {
+  font-size: 0.68rem;
+  color: var(--on-surface-muted);
+  font-style: italic;
+}
+
+.pin-delete-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--on-surface-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1;
+}
+
+.pin-delete-btn:hover {
+  background: var(--error-container);
+  color: var(--error);
+}
+
+/* ── Pin LatLng Display (in modal) ── */
+.pin-latlng-display {
+  background: var(--surface-low);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.85rem;
+  margin-bottom: var(--space-md);
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: monospace;
+  color: var(--on-surface-muted);
+  letter-spacing: 0.02em;
+}

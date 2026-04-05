@@ -205,6 +205,10 @@ mod tests {
     }
 
     async fn cleanup_db(pool: &sqlx::PgPool) {
+        sqlx::query("DELETE FROM activity_pins")
+            .execute(pool)
+            .await
+            .expect("Failed to clean up activity_pins");
         sqlx::query("DELETE FROM trip_members")
             .execute(pool)
             .await
