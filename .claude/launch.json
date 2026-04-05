@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "dev",
+      "name": "frontend",
       "runtimeExecutable": "/bin/bash",
-      "runtimeArgs": ["-c", "export PATH=/Users/anupriyamranjit/.nvm/versions/node/v24.13.0/bin:$PATH && npm run dev"],
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && cd frontend && npm run dev"],
       "port": 3000
     }
   ]
