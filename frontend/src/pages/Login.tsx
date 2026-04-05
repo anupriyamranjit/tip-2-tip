@@ -30,18 +30,20 @@ export default function Login() {
   return (
     <div class="auth-layout">
       <div class="auth-card">
-        <h1>Welcome back</h1>
-        <p class="subtitle">Sign in to your Tip2Tip account</p>
+        <div class="auth-brand">
+          <h1>Editorial Wanderlust</h1>
+          <span class="tagline">Digital Concierge</span>
+        </div>
 
         {error() && <div class="error-message">{error()}</div>}
 
         <form onSubmit={handleSubmit}>
           <div class="form-group">
-            <label for="email">Email</label>
+            <label for="email">Email Address</label>
             <input
               id="email"
               type="email"
-              placeholder="you@example.com"
+              placeholder="julian.traverse@explorer.com"
               value={email()}
               onInput={(e) => setEmail(e.currentTarget.value)}
               required
@@ -49,11 +51,14 @@ export default function Login() {
           </div>
 
           <div class="form-group">
-            <label for="password">Password</label>
+            <div class="label-row">
+              <label for="password">Password</label>
+              <a href="#" class="forgot-link">Forgot Password?</a>
+            </div>
             <input
               id="password"
               type="password"
-              placeholder="Your password"
+              placeholder="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;"
               value={password()}
               onInput={(e) => setPassword(e.currentTarget.value)}
               required
@@ -65,10 +70,22 @@ export default function Login() {
           </button>
         </form>
 
+        <div class="auth-divider">
+          <span>Continue with</span>
+        </div>
+
+        <div class="social-buttons">
+          <button class="social-btn" type="button" aria-label="Sign in with Google">G</button>
+          <button class="social-btn" type="button" aria-label="Sign in with Apple">&#xF8FF;</button>
+        </div>
+
         <div class="auth-footer">
-          Don't have an account? <A href="/signup">Sign up</A>
+          Don't have an account? <A href="/signup">Start your journey</A>
         </div>
       </div>
+
+      <span class="location-tag">Mt. Fitz Roy, Patagonia</span>
+      <span class="copyright">&copy; 2024 Editorial Wanderlust. All Rights Reserved.</span>
     </div>
   );
 }
