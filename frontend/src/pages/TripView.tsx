@@ -75,12 +75,19 @@ export default function TripView() {
       zoomControl: false,
     }).setView([20, 0], 3);
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-      maxZoom: 20,
-      subdomains: "abcd",
-    }).addTo(mapInstance);
+    const isRetina = window.devicePixelRatio > 1;
+    L.tileLayer(
+      isRetina
+        ? "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png"
+        : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+      {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+        maxZoom: 20,
+        tileSize: 256,
+        subdomains: "abcd",
+      }
+    ).addTo(mapInstance);
 
     L.control.zoom({ position: "bottomleft" }).addTo(mapInstance);
 

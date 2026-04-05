@@ -1021,6 +1021,11 @@ body {
   box-shadow: 0 4px 16px rgba(7, 30, 39, 0.06);
 }
 
+.pin-card .status-badge {
+  position: static;
+  flex-shrink: 0;
+}
+
 .pin-card-header {
   display: flex;
   align-items: flex-start;
