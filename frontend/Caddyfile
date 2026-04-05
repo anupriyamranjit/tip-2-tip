@@ -1,0 +1,13 @@
+:3000 {
+	# Proxy API requests to the backend
+	handle /api/* {
+		reverse_proxy backend:8080
+	}
+
+	# Serve static files with SPA fallback
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
