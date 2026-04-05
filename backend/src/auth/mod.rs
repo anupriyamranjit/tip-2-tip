@@ -1,6 +1,8 @@
+mod extractor;
 mod handler;
-mod jwt;
+pub mod jwt;
 mod model;
 
+pub use extractor::AuthUser;
 pub use handler::router;
 pub use handler::AppState;

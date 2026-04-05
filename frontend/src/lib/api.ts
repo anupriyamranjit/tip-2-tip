@@ -20,6 +20,28 @@ interface AuthResponse {
   };
 }
 
+export interface Trip {
+  id: string;
+  name: string;
+  description: string | null;
+  destination: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  status: string;
+  cover_image_url: string | null;
+  role: string;
+  member_count: number;
+  created_at: string;
+}
+
+export interface CreateTripPayload {
+  name: string;
+  description?: string;
+  destination?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
 async function request<T>(path: string, options: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...options,
@@ -38,6 +60,20 @@ async function request<T>(path: string, options: RequestInit): Promise<T> {
   return data as T;
 }
 
+async function authRequest<T>(
+  path: string,
+  token: string,
+  options: RequestInit = {}
+): Promise<T> {
+  return request<T>(path, {
+    ...options,
+    headers: {
+      ...options.headers,
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
 export function signup(payload: SignupPayload): Promise<AuthResponse> {
   return request<AuthResponse>("/auth/signup", {
     method: "POST",
@@ -47,6 +83,24 @@ export function signup(payload: SignupPayload): Promise<AuthResponse> {
 
 export function login(payload: LoginPayload): Promise<AuthResponse> {
   return request<AuthResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getMyTrips(token: string): Promise<{ trips: Trip[] }> {
+  return authRequest("/trips", token);
+}
+
+export function getTrip(token: string, id: string): Promise<Trip> {
+  return authRequest(`/trips/${id}`, token);
+}
+
+export function createTrip(
+  token: string,
+  payload: CreateTripPayload
+): Promise<Trip> {
+  return authRequest("/trips", token, {
     method: "POST",
     body: JSON.stringify(payload),
   });

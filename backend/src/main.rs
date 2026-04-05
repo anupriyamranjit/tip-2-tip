@@ -1,4 +1,5 @@
 mod auth;
+mod trips;
 
 use auth::AppState;
 use tower_http::cors::{AllowHeaders, AllowMethods, CorsLayer};
@@ -57,6 +58,7 @@ async fn main() {
 
     let app = axum::Router::new()
         .nest("/api/v1/auth", auth::router())
+        .nest("/api/v1/trips", trips::router())
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
