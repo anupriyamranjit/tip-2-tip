@@ -1,7 +1,7 @@
 mod auth;
 
 use auth::AppState;
-use tower_http::cors::{AllowHeaders, AllowMethods, Any, CorsLayer};
+use tower_http::cors::{AllowHeaders, AllowMethods, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 #[tokio::main]
@@ -44,8 +44,14 @@ async fn main() {
         jwt_secret,
     };
 
+    let cors_origin = std::env::var("CORS_ORIGIN")
+        .unwrap_or_else(|_| "http://localhost:3000".to_string());
     let cors = CorsLayer::new()
-        .allow_origin(Any)
+        .allow_origin(
+            cors_origin
+                .parse::<axum::http::HeaderValue>()
+                .expect("Invalid CORS_ORIGIN value"),
+        )
         .allow_methods(AllowMethods::any())
         .allow_headers(AllowHeaders::any());
 

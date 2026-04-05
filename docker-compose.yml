@@ -6,8 +6,6 @@ services:
       POSTGRES_USER: tip2tip
       POSTGRES_PASSWORD: tip2tip_dev
       POSTGRES_DB: tip2tip
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -25,6 +23,7 @@ services:
     environment:
       DATABASE_URL: postgres://tip2tip:tip2tip_dev@db:5432/tip2tip
       JWT_SECRET: dev-secret-key-that-is-at-least-32-characters-long
+      CORS_ORIGIN: http://localhost:3000
       RUST_LOG: tip2tip_backend=debug,tower_http=debug
     depends_on:
       db:
