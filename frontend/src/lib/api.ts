@@ -125,6 +125,14 @@ export interface PinDocument {
   created_at: string;
 }
 
+export interface PinVoteSummary {
+  upvotes: number;
+  downvotes: number;
+  score: number;
+  /** Current user's vote: 1 (up), -1 (down), or 0 (none) */
+  user_vote: number;
+}
+
 export interface ActivityPin {
   id: string;
   trip_id: string;
@@ -139,6 +147,7 @@ export interface ActivityPin {
   scheduled_at: string | null;
   price_cents: number | null;
   documents: PinDocument[];
+  votes: PinVoteSummary;
   created_by: string;
   created_at: string;
 }
@@ -244,6 +253,30 @@ export function deleteDocument(
   docId: string
 ): Promise<void> {
   return authRequest(`/trips/${tripId}/pins/${pinId}/documents/${docId}`, token, {
+    method: "DELETE",
+  });
+}
+
+/* ── Pin Votes ── */
+
+export function votePin(
+  token: string,
+  tripId: string,
+  pinId: string,
+  vote: 1 | -1
+): Promise<PinVoteSummary> {
+  return authRequest(`/trips/${tripId}/pins/${pinId}/vote`, token, {
+    method: "POST",
+    body: JSON.stringify({ vote }),
+  });
+}
+
+export function deleteVote(
+  token: string,
+  tripId: string,
+  pinId: string
+): Promise<PinVoteSummary> {
+  return authRequest(`/trips/${tripId}/pins/${pinId}/vote`, token, {
     method: "DELETE",
   });
 }

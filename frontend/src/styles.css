@@ -1035,9 +1035,16 @@ body {
 }
 
 .pin-card-emoji {
-  font-size: 1.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  font-size: 1rem;
   line-height: 1;
   flex-shrink: 0;
+  background: var(--primary-container);
+  border-radius: var(--radius-full);
 }
 
 .pin-card-title-group {
@@ -1175,6 +1182,63 @@ body {
 
 .pin-doc-delete:hover {
   background: var(--error-container);
+  color: var(--error);
+}
+
+/* ── Pin Vote Controls ── */
+
+.pin-vote-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0.25rem;
+}
+
+.pin-vote-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: var(--surface-low);
+  color: var(--on-surface-variant);
+  font-size: 0.55rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+  line-height: 1;
+}
+
+.pin-vote-btn:hover {
+  background: var(--surface-highest);
+  transform: scale(1.1);
+}
+
+.pin-vote-up.pin-vote-active {
+  background: rgba(0, 106, 98, 0.15);
+  color: var(--tertiary);
+}
+
+.pin-vote-down.pin-vote-active {
+  background: rgba(186, 26, 26, 0.12);
+  color: var(--error);
+}
+
+.pin-vote-score {
+  font-size: 0.75rem;
+  font-weight: 700;
+  min-width: 1.2rem;
+  text-align: center;
+  color: var(--on-surface-variant);
+  font-family: var(--font-display);
+}
+
+.pin-vote-score.score-positive {
+  color: var(--tertiary);
+}
+
+.pin-vote-score.score-negative {
   color: var(--error);
 }
 

@@ -287,6 +287,20 @@ export default function TripView() {
     }
   };
 
+  const handleVote = async (pin: ActivityPin, vote: 1 | -1) => {
+    try {
+      // If user already voted the same way, remove the vote (toggle off)
+      if (pin.votes.user_vote === vote) {
+        await api.deleteVote(auth.token()!, params.tripId, pin.id);
+      } else {
+        await api.votePin(auth.token()!, params.tripId, pin.id, vote);
+      }
+      refetchPins();
+    } catch (err: any) {
+      console.error("Failed to vote:", err);
+    }
+  };
+
   const handleUploadDocument = async (pinId: string, file: File) => {
     try {
       await api.uploadDocument(auth.token()!, params.tripId, pinId, file);
@@ -467,6 +481,27 @@ export default function TripView() {
                       >
                         {pin.status}
                       </span>
+                    </div>
+
+                    {/* Vote controls */}
+                    <div class="pin-vote-row" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        class={`pin-vote-btn pin-vote-up ${pin.votes.user_vote === 1 ? "pin-vote-active" : ""}`}
+                        onClick={() => handleVote(pin, 1)}
+                        title="Upvote"
+                      >
+                        &#x25B2;
+                      </button>
+                      <span class={`pin-vote-score ${pin.votes.score > 0 ? "score-positive" : pin.votes.score < 0 ? "score-negative" : ""}`}>
+                        {pin.votes.score}
+                      </span>
+                      <button
+                        class={`pin-vote-btn pin-vote-down ${pin.votes.user_vote === -1 ? "pin-vote-active" : ""}`}
+                        onClick={() => handleVote(pin, -1)}
+                        title="Downvote"
+                      >
+                        &#x25BC;
+                      </button>
                     </div>
 
                     <Show when={pin.description}>

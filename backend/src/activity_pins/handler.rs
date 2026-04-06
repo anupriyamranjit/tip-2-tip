@@ -17,6 +17,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/{trip_id}/pins", post(create_pin).get(list_pins))
         .route("/{trip_id}/pins/{pin_id}", get(get_pin).put(update_pin).delete(delete_pin))
+        .route("/{trip_id}/pins/{pin_id}/vote", post(vote_pin).delete(delete_vote))
         .route("/{trip_id}/pins/{pin_id}/documents", post(upload_document).get(list_documents))
         .route("/{trip_id}/pins/{pin_id}/documents/{doc_id}", get(download_document).delete(delete_document))
         .route("/{trip_id}/ws", get(super::ws::ws_handler))
@@ -101,6 +102,59 @@ async fn fetch_documents_for_pins(
     Ok(map)
 }
 
+/// Fetches vote summaries for a list of pins, including the current user's vote.
+async fn fetch_votes_for_pins(
+    pool: &sqlx::PgPool,
+    pin_ids: &[uuid::Uuid],
+    current_user_id: uuid::Uuid,
+) -> Result<HashMap<uuid::Uuid, PinVoteSummary>, sqlx::Error> {
+    if pin_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    // Aggregate votes per pin
+    let rows = sqlx::query_as::<_, (uuid::Uuid, i64, i64)>(
+        "SELECT pin_id, \
+         COALESCE(SUM(CASE WHEN vote = 1 THEN 1 ELSE 0 END), 0) as upvotes, \
+         COALESCE(SUM(CASE WHEN vote = -1 THEN 1 ELSE 0 END), 0) as downvotes \
+         FROM pin_votes WHERE pin_id = ANY($1) GROUP BY pin_id",
+    )
+    .bind(pin_ids)
+    .fetch_all(pool)
+    .await?;
+
+    // Current user's votes
+    let user_votes = sqlx::query_as::<_, (uuid::Uuid, i16)>(
+        "SELECT pin_id, vote FROM pin_votes WHERE pin_id = ANY($1) AND user_id = $2",
+    )
+    .bind(pin_ids)
+    .bind(current_user_id)
+    .fetch_all(pool)
+    .await?;
+
+    let user_vote_map: HashMap<uuid::Uuid, i16> = user_votes.into_iter().collect();
+
+    let mut map: HashMap<uuid::Uuid, PinVoteSummary> = HashMap::new();
+    for (pin_id, upvotes, downvotes) in rows {
+        map.insert(pin_id, PinVoteSummary {
+            upvotes,
+            downvotes,
+            score: upvotes - downvotes,
+            user_vote: user_vote_map.get(&pin_id).copied().unwrap_or(0),
+        });
+    }
+
+    // Ensure all requested pins have a summary (even if 0 votes)
+    for pid in pin_ids {
+        map.entry(*pid).or_insert_with(|| PinVoteSummary {
+            user_vote: user_vote_map.get(pid).copied().unwrap_or(0),
+            ..Default::default()
+        });
+    }
+
+    Ok(map)
+}
+
 async fn create_pin(
     State(state): State<AppState>,
     auth_user: AuthUser,
@@ -180,7 +234,7 @@ async fn create_pin(
                         triggered_by: r.username.clone(),
                     }).await;
 
-                    (StatusCode::CREATED, Json(json!(ActivityPinResponse::from_row(r))))
+                    (StatusCode::CREATED, Json(json!(ActivityPinResponse::from_row(r, PinVoteSummary::default()))))
                 }
                 Err(_) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -219,20 +273,22 @@ async fn list_pins(
             let pin_ids: Vec<uuid::Uuid> = rows.iter().map(|r| r.id).collect();
             let trip_id_str = trip_id.to_string();
 
-            let docs_map = fetch_documents_for_pins(&state.pool, &pin_ids, &trip_id_str).await;
+            let docs_result = fetch_documents_for_pins(&state.pool, &pin_ids, &trip_id_str).await;
+            let votes_result = fetch_votes_for_pins(&state.pool, &pin_ids, auth_user.user_id).await;
 
-            match docs_map {
-                Ok(mut docs) => {
+            match (docs_result, votes_result) {
+                (Ok(mut docs), Ok(mut votes)) => {
                     let pins: Vec<ActivityPinResponse> = rows
                         .into_iter()
                         .map(|row| {
                             let pin_docs = docs.remove(&row.id).unwrap_or_default();
-                            ActivityPinResponse::from_row_with_docs(row, pin_docs)
+                            let pin_votes = votes.remove(&row.id).unwrap_or_default();
+                            ActivityPinResponse::from_row_with_docs(row, pin_docs, pin_votes)
                         })
                         .collect();
                     (StatusCode::OK, Json(json!({ "pins": pins })))
                 }
-                Err(_) => (
+                _ => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({ "error": "Something went wrong" })),
                 ),
@@ -268,12 +324,14 @@ async fn get_pin(
         Ok(Some(row)) => {
             let trip_id_str = trip_id.to_string();
             let docs = fetch_documents_for_pins(&state.pool, &[pin_id], &trip_id_str).await;
-            match docs {
-                Ok(mut map) => {
-                    let pin_docs = map.remove(&pin_id).unwrap_or_default();
-                    (StatusCode::OK, Json(json!(ActivityPinResponse::from_row_with_docs(row, pin_docs))))
+            let votes = fetch_votes_for_pins(&state.pool, &[pin_id], auth_user.user_id).await;
+            match (docs, votes) {
+                (Ok(mut doc_map), Ok(mut vote_map)) => {
+                    let pin_docs = doc_map.remove(&pin_id).unwrap_or_default();
+                    let pin_votes = vote_map.remove(&pin_id).unwrap_or_default();
+                    (StatusCode::OK, Json(json!(ActivityPinResponse::from_row_with_docs(row, pin_docs, pin_votes))))
                 }
-                Err(_) => (
+                _ => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({ "error": "Something went wrong" })),
                 ),
@@ -403,6 +461,13 @@ async fn update_pin(
 
     match result {
         Ok(row) => {
+            // Fetch current votes for this pin
+            let votes = fetch_votes_for_pins(&state.pool, &[row.id], auth_user.user_id)
+                .await
+                .ok()
+                .and_then(|mut m| m.remove(&pin_id))
+                .unwrap_or_default();
+
             // Broadcast real-time event
             state.broadcaster.broadcast(trip_id, TripEvent {
                 event_type: "pin_updated".to_string(),
@@ -410,7 +475,128 @@ async fn update_pin(
                 triggered_by: row.username.clone(),
             }).await;
 
-            (StatusCode::OK, Json(json!(ActivityPinResponse::from_row(row))))
+            (StatusCode::OK, Json(json!(ActivityPinResponse::from_row(row, votes))))
+        }
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Something went wrong" })),
+        ),
+    }
+}
+
+/// Cast or change a vote on a pin. Upserting ensures one vote per user per pin.
+async fn vote_pin(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path((trip_id, pin_id)): Path<(uuid::Uuid, uuid::Uuid)>,
+    Json(body): Json<VoteRequest>,
+) -> impl IntoResponse {
+    if body.vote != 1 && body.vote != -1 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Vote must be 1 (upvote) or -1 (downvote)" })),
+        );
+    }
+
+    if let Err(resp) = verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
+        return resp;
+    }
+
+    // Verify pin exists in this trip
+    let pin_exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM activity_pins WHERE id = $1 AND trip_id = $2)",
+    )
+    .bind(pin_id)
+    .bind(trip_id)
+    .fetch_one(&state.pool)
+    .await;
+
+    match pin_exists {
+        Ok(false) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Pin not found" })),
+            );
+        }
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Something went wrong" })),
+            );
+        }
+        _ => {}
+    }
+
+    // Upsert: insert or update the vote
+    let result = sqlx::query(
+        "INSERT INTO pin_votes (pin_id, user_id, vote) \
+         VALUES ($1, $2, $3) \
+         ON CONFLICT (pin_id, user_id) DO UPDATE SET vote = $3",
+    )
+    .bind(pin_id)
+    .bind(auth_user.user_id)
+    .bind(body.vote)
+    .execute(&state.pool)
+    .await;
+
+    match result {
+        Ok(_) => {
+            // Fetch updated vote summary
+            let votes = fetch_votes_for_pins(&state.pool, &[pin_id], auth_user.user_id)
+                .await
+                .ok()
+                .and_then(|mut m| m.remove(&pin_id))
+                .unwrap_or_default();
+
+            // Broadcast so other users see the vote change in real-time
+            state.broadcaster.broadcast(trip_id, TripEvent {
+                event_type: "pin_voted".to_string(),
+                pin_id: pin_id.to_string(),
+                triggered_by: String::new(),
+            }).await;
+
+            (StatusCode::OK, Json(json!(votes)))
+        }
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Something went wrong" })),
+        ),
+    }
+}
+
+/// Remove the current user's vote from a pin.
+async fn delete_vote(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path((trip_id, pin_id)): Path<(uuid::Uuid, uuid::Uuid)>,
+) -> impl IntoResponse {
+    if let Err(resp) = verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
+        return resp;
+    }
+
+    let result = sqlx::query(
+        "DELETE FROM pin_votes WHERE pin_id = $1 AND user_id = $2",
+    )
+    .bind(pin_id)
+    .bind(auth_user.user_id)
+    .execute(&state.pool)
+    .await;
+
+    match result {
+        Ok(_) => {
+            let votes = fetch_votes_for_pins(&state.pool, &[pin_id], auth_user.user_id)
+                .await
+                .ok()
+                .and_then(|mut m| m.remove(&pin_id))
+                .unwrap_or_default();
+
+            state.broadcaster.broadcast(trip_id, TripEvent {
+                event_type: "pin_voted".to_string(),
+                pin_id: pin_id.to_string(),
+                triggered_by: String::new(),
+            }).await;
+
+            (StatusCode::OK, Json(json!(votes)))
         }
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -908,6 +1094,10 @@ mod tests {
     }
 
     async fn cleanup_db(pool: &sqlx::PgPool) {
+        sqlx::query("DELETE FROM pin_votes")
+            .execute(pool)
+            .await
+            .expect("Failed to clean up pin_votes");
         sqlx::query("DELETE FROM pin_documents")
             .execute(pool)
             .await
@@ -1545,6 +1735,333 @@ mod tests {
             .expect("Failed to send request");
 
         assert_eq!(delete_response.status(), StatusCode::NO_CONTENT, "Delete document should return 204");
+
+        cleanup_db(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn test_vote_pin_upvote_returns_200_with_correct_counts() {
+        // A trip member should be able to upvote a pin and see the vote reflected
+        let pool = setup_db().await;
+        cleanup_db(&pool).await;
+        let app = test_app(pool.clone());
+
+        let token = signup_and_get_token(&app, "voter@test.com", "voter").await;
+        let trip_id = create_trip_and_get_id(&app, &token, "Vote Trip").await;
+        let pin_id = create_pin_and_get_id(&app, &token, &trip_id, "Voteable Pin").await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/trips/{}/pins/{}/vote", trip_id, pin_id))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::from(
+                        serde_json::to_string(&json!({ "vote": 1 }))
+                            .expect("Failed to serialize"),
+                    ))
+                    .expect("Failed to build request"),
+            )
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(response.status(), StatusCode::OK, "Upvote should return 200");
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("Failed to read body");
+        let json: serde_json::Value =
+            serde_json::from_slice(&body).expect("Response should be valid JSON");
+
+        assert_eq!(json["upvotes"], 1, "Should have 1 upvote");
+        assert_eq!(json["downvotes"], 0, "Should have 0 downvotes");
+        assert_eq!(json["score"], 1, "Score should be 1");
+        assert_eq!(json["user_vote"], 1, "User's vote should be 1");
+
+        cleanup_db(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn test_vote_pin_downvote_returns_200() {
+        // A trip member should be able to downvote a pin
+        let pool = setup_db().await;
+        cleanup_db(&pool).await;
+        let app = test_app(pool.clone());
+
+        let token = signup_and_get_token(&app, "downvoter@test.com", "downvoter").await;
+        let trip_id = create_trip_and_get_id(&app, &token, "Downvote Trip").await;
+        let pin_id = create_pin_and_get_id(&app, &token, &trip_id, "Bad Pin").await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/trips/{}/pins/{}/vote", trip_id, pin_id))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::from(
+                        serde_json::to_string(&json!({ "vote": -1 }))
+                            .expect("Failed to serialize"),
+                    ))
+                    .expect("Failed to build request"),
+            )
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(response.status(), StatusCode::OK, "Downvote should return 200");
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("Failed to read body");
+        let json: serde_json::Value =
+            serde_json::from_slice(&body).expect("Response should be valid JSON");
+
+        assert_eq!(json["upvotes"], 0);
+        assert_eq!(json["downvotes"], 1);
+        assert_eq!(json["score"], -1);
+        assert_eq!(json["user_vote"], -1);
+
+        cleanup_db(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn test_vote_pin_invalid_value_returns_400() {
+        // A vote value other than 1 or -1 should be rejected
+        let pool = setup_db().await;
+        cleanup_db(&pool).await;
+        let app = test_app(pool.clone());
+
+        let token = signup_and_get_token(&app, "badvote@test.com", "badvote").await;
+        let trip_id = create_trip_and_get_id(&app, &token, "Invalid Vote Trip").await;
+        let pin_id = create_pin_and_get_id(&app, &token, &trip_id, "Pin").await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/trips/{}/pins/{}/vote", trip_id, pin_id))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::from(
+                        serde_json::to_string(&json!({ "vote": 5 }))
+                            .expect("Failed to serialize"),
+                    ))
+                    .expect("Failed to build request"),
+            )
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "Invalid vote value should return 400");
+
+        cleanup_db(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn test_vote_pin_change_vote_updates_correctly() {
+        // Changing a vote from upvote to downvote should upsert correctly
+        let pool = setup_db().await;
+        cleanup_db(&pool).await;
+        let app = test_app(pool.clone());
+
+        let token = signup_and_get_token(&app, "changer@test.com", "changer").await;
+        let trip_id = create_trip_and_get_id(&app, &token, "Change Vote Trip").await;
+        let pin_id = create_pin_and_get_id(&app, &token, &trip_id, "Changeable Pin").await;
+
+        // First upvote
+        let _response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/trips/{}/pins/{}/vote", trip_id, pin_id))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::from(
+                        serde_json::to_string(&json!({ "vote": 1 }))
+                            .expect("Failed to serialize"),
+                    ))
+                    .expect("Failed to build request"),
+            )
+            .await
+            .expect("Failed to send request");
+
+        // Then change to downvote
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/trips/{}/pins/{}/vote", trip_id, pin_id))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::from(
+                        serde_json::to_string(&json!({ "vote": -1 }))
+                            .expect("Failed to serialize"),
+                    ))
+                    .expect("Failed to build request"),
+            )
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(response.status(), StatusCode::OK, "Change vote should return 200");
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("Failed to read body");
+        let json: serde_json::Value =
+            serde_json::from_slice(&body).expect("Response should be valid JSON");
+
+        assert_eq!(json["upvotes"], 0, "Should have 0 upvotes after changing to downvote");
+        assert_eq!(json["downvotes"], 1, "Should have 1 downvote");
+        assert_eq!(json["user_vote"], -1, "User vote should be -1");
+
+        cleanup_db(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn test_delete_vote_removes_user_vote() {
+        // Removing a vote should bring counts back to zero
+        let pool = setup_db().await;
+        cleanup_db(&pool).await;
+        let app = test_app(pool.clone());
+
+        let token = signup_and_get_token(&app, "unvote@test.com", "unvoter").await;
+        let trip_id = create_trip_and_get_id(&app, &token, "Unvote Trip").await;
+        let pin_id = create_pin_and_get_id(&app, &token, &trip_id, "Unvoteable Pin").await;
+
+        // First upvote
+        let _response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/trips/{}/pins/{}/vote", trip_id, pin_id))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::from(
+                        serde_json::to_string(&json!({ "vote": 1 }))
+                            .expect("Failed to serialize"),
+                    ))
+                    .expect("Failed to build request"),
+            )
+            .await
+            .expect("Failed to send request");
+
+        // Then remove vote
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/api/v1/trips/{}/pins/{}/vote", trip_id, pin_id))
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::empty())
+                    .expect("Failed to build request"),
+            )
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(response.status(), StatusCode::OK, "Delete vote should return 200");
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("Failed to read body");
+        let json: serde_json::Value =
+            serde_json::from_slice(&body).expect("Response should be valid JSON");
+
+        assert_eq!(json["upvotes"], 0, "Should have 0 upvotes after removing vote");
+        assert_eq!(json["downvotes"], 0, "Should have 0 downvotes after removing vote");
+        assert_eq!(json["user_vote"], 0, "User vote should be 0 after removing");
+
+        cleanup_db(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn test_pin_response_includes_vote_summary() {
+        // The list pins endpoint should include vote data in each pin response
+        let pool = setup_db().await;
+        cleanup_db(&pool).await;
+        let app = test_app(pool.clone());
+
+        let token = signup_and_get_token(&app, "listvote@test.com", "listvote").await;
+        let trip_id = create_trip_and_get_id(&app, &token, "List Vote Trip").await;
+        let pin_id = create_pin_and_get_id(&app, &token, &trip_id, "Vote Summary Pin").await;
+
+        // Upvote the pin
+        let _response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/trips/{}/pins/{}/vote", trip_id, pin_id))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::from(
+                        serde_json::to_string(&json!({ "vote": 1 }))
+                            .expect("Failed to serialize"),
+                    ))
+                    .expect("Failed to build request"),
+            )
+            .await
+            .expect("Failed to send request");
+
+        // List pins and verify votes are included
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/api/v1/trips/{}/pins", trip_id))
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::empty())
+                    .expect("Failed to build request"),
+            )
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("Failed to read body");
+        let json: serde_json::Value =
+            serde_json::from_slice(&body).expect("Response should be valid JSON");
+
+        let pin = &json["pins"][0];
+        assert_eq!(pin["votes"]["upvotes"], 1, "List should include vote counts");
+        assert_eq!(pin["votes"]["user_vote"], 1, "List should include user's vote");
+        assert_eq!(pin["votes"]["score"], 1, "List should include score");
+
+        cleanup_db(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn test_vote_pin_returns_404_for_non_member() {
+        // Non-member should not be able to vote on a pin
+        let pool = setup_db().await;
+        cleanup_db(&pool).await;
+        let app = test_app(pool.clone());
+
+        let token_owner = signup_and_get_token(&app, "voteowner@test.com", "voteowner").await;
+        let token_other = signup_and_get_token(&app, "voteother@test.com", "voteother").await;
+        let trip_id = create_trip_and_get_id(&app, &token_owner, "Private Vote Trip").await;
+        let pin_id = create_pin_and_get_id(&app, &token_owner, &trip_id, "Private Pin").await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/trips/{}/pins/{}/vote", trip_id, pin_id))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", format!("Bearer {}", token_other))
+                    .body(Body::from(
+                        serde_json::to_string(&json!({ "vote": 1 }))
+                            .expect("Failed to serialize"),
+                    ))
+                    .expect("Failed to build request"),
+            )
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "Non-member vote should get 404");
 
         cleanup_db(&pool).await;
     }

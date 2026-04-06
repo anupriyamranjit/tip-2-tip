@@ -66,12 +66,13 @@ pub struct ActivityPinResponse {
     pub scheduled_at: Option<String>,
     pub price_cents: Option<i32>,
     pub documents: Vec<PinDocumentResponse>,
+    pub votes: PinVoteSummary,
     pub created_by: String,
     pub created_at: String,
 }
 
 impl ActivityPinResponse {
-    pub fn from_row(row: ActivityPinRow) -> Self {
+    pub fn from_row(row: ActivityPinRow, votes: PinVoteSummary) -> Self {
         Self {
             id: row.id.to_string(),
             trip_id: row.trip_id.to_string(),
@@ -86,13 +87,14 @@ impl ActivityPinResponse {
             scheduled_at: row.scheduled_at.map(|dt| dt.to_rfc3339()),
             price_cents: row.price_cents,
             documents: vec![],
+            votes,
             created_by: row.username,
             created_at: row.created_at.to_rfc3339(),
         }
     }
 
-    pub fn from_row_with_docs(row: ActivityPinRow, documents: Vec<PinDocumentResponse>) -> Self {
-        let mut resp = Self::from_row(row);
+    pub fn from_row_with_docs(row: ActivityPinRow, documents: Vec<PinDocumentResponse>, votes: PinVoteSummary) -> Self {
+        let mut resp = Self::from_row(row, votes);
         resp.documents = documents;
         resp
     }
@@ -132,6 +134,34 @@ impl PinDocumentResponse {
                 trip_id, pin_id, row.id
             ),
             created_at: row.created_at.to_rfc3339(),
+        }
+    }
+}
+
+/* ── Pin Votes ── */
+
+#[derive(Debug, Deserialize)]
+pub struct VoteRequest {
+    /// Must be 1 (upvote) or -1 (downvote)
+    pub vote: i16,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PinVoteSummary {
+    pub upvotes: i64,
+    pub downvotes: i64,
+    pub score: i64,
+    /// The current user's vote: 1, -1, or 0 (no vote)
+    pub user_vote: i16,
+}
+
+impl Default for PinVoteSummary {
+    fn default() -> Self {
+        Self {
+            upvotes: 0,
+            downvotes: 0,
+            score: 0,
+            user_vote: 0,
         }
     }
 }
