@@ -1214,6 +1214,27 @@ body {
   color: var(--primary);
 }
 
+.pin-edit-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--on-surface-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1;
+}
+
+.pin-edit-btn:hover {
+  background: var(--surface-low);
+  color: var(--primary);
+}
+
 .pin-delete-btn {
   width: 24px;
   height: 24px;
@@ -1269,4 +1290,54 @@ body {
   font-family: monospace;
   color: var(--on-surface-muted);
   letter-spacing: 0.02em;
+}
+
+/* ── Confirm Delete Modal ── */
+.confirm-delete-modal {
+  max-width: 380px;
+}
+
+.confirm-delete-text {
+  font-size: 0.88rem;
+  color: var(--on-surface);
+  line-height: 1.5;
+  margin-bottom: var(--space-lg);
+}
+
+.confirm-delete-actions {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: flex-end;
+}
+
+.btn-secondary {
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--surface-low);
+  color: var(--on-surface);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-secondary:hover {
+  background: var(--surface-lowest);
+}
+
+.btn-danger {
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--error);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
 }

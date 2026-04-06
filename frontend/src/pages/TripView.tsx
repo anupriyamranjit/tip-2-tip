@@ -79,6 +79,8 @@ export default function TripView() {
   } | null>(null);
   const [activeTab, setActiveTab] = createSignal("map");
   const [expandedPinId, setExpandedPinId] = createSignal<string | null>(null);
+  const [editingPin, setEditingPin] = createSignal<ActivityPin | null>(null);
+  const [confirmDeletePin, setConfirmDeletePin] = createSignal<ActivityPin | null>(null);
 
   let mapContainer!: HTMLDivElement;
   let mapInstance: L.Map | undefined;
@@ -199,6 +201,7 @@ export default function TripView() {
   const handleDeletePin = async (pinId: string) => {
     try {
       await api.deletePin(auth.token()!, params.tripId, pinId);
+      setConfirmDeletePin(null);
       refetchPins();
     } catch (err: any) {
       console.error("Failed to delete pin:", err);
@@ -478,10 +481,20 @@ export default function TripView() {
                           />
                         </label>
                         <button
+                          class="pin-edit-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingPin(pin);
+                          }}
+                          title="Edit pin"
+                        >
+                          &#x270E;
+                        </button>
+                        <button
                           class="pin-delete-btn"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDeletePin(pin.id);
+                            setConfirmDeletePin(pin);
                           }}
                           title="Delete pin"
                         >
@@ -512,6 +525,29 @@ export default function TripView() {
             setClickedLatLng(null);
             refetchPins();
           }}
+        />
+      </Show>
+
+      {/* Edit Pin Modal */}
+      <Show when={editingPin()}>
+        <EditPinModal
+          pin={editingPin()!}
+          tripId={params.tripId}
+          token={auth.token()!}
+          onClose={() => setEditingPin(null)}
+          onUpdated={() => {
+            setEditingPin(null);
+            refetchPins();
+          }}
+        />
+      </Show>
+
+      {/* Confirm Delete Modal */}
+      <Show when={confirmDeletePin()}>
+        <ConfirmDeleteModal
+          pin={confirmDeletePin()!}
+          onCancel={() => setConfirmDeletePin(null)}
+          onConfirm={() => handleDeletePin(confirmDeletePin()!.id)}
         />
       </Show>
     </div>
@@ -669,6 +705,222 @@ function AddPinModal(props: {
             {loading() ? "Adding..." : "Add to Map"}
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/* ── Edit Pin Modal ── */
+
+function isoToLocalDatetime(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function EditPinModal(props: {
+  pin: ActivityPin;
+  tripId: string;
+  token: string;
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const [title, setTitle] = createSignal(props.pin.title);
+  const [description, setDescription] = createSignal(props.pin.description || "");
+  const [category, setCategory] = createSignal(props.pin.category);
+  const [scheduledAt, setScheduledAt] = createSignal(
+    props.pin.scheduled_at ? isoToLocalDatetime(props.pin.scheduled_at) : ""
+  );
+  const [priceDollars, setPriceDollars] = createSignal(
+    props.pin.price_cents ? (props.pin.price_cents / 100).toFixed(2) : ""
+  );
+  const [error, setError] = createSignal("");
+  const [loading, setLoading] = createSignal(false);
+
+  const handleSubmit = async (e: Event) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const payload: api.UpdatePinPayload = {};
+
+      if (title() !== props.pin.title) payload.title = title();
+      if (description() !== (props.pin.description || ""))
+        payload.description = description();
+      if (category() !== props.pin.category) payload.category = category();
+
+      // Always send scheduled_at so it can be updated or cleared
+      if (scheduledAt()) {
+        const dt = new Date(scheduledAt());
+        payload.scheduled_at = dt.toISOString();
+      } else if (props.pin.scheduled_at) {
+        // User cleared the field — send empty string to clear
+        // Backend handles this via the CASE WHEN pattern
+        payload.scheduled_at = new Date(0).toISOString();
+      }
+
+      if (priceDollars()) {
+        const cents = Math.round(parseFloat(priceDollars()) * 100);
+        if (!isNaN(cents) && cents >= 0) payload.price_cents = cents;
+      }
+
+      await api.updatePin(props.token, props.tripId, props.pin.id, payload);
+      props.onUpdated();
+    } catch (err: any) {
+      setError(err.message || "Failed to update pin");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOverlayClick = (e: MouseEvent) => {
+    if (e.target === e.currentTarget) props.onClose();
+  };
+
+  return (
+    <div
+      class="modal-overlay"
+      onClick={handleOverlayClick}
+      role="dialog"
+      aria-label="Edit activity pin"
+    >
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>Edit Activity</h2>
+          <button
+            class="modal-close"
+            onClick={props.onClose}
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
+
+        {error() && <div class="error-message">{error()}</div>}
+
+        <div class="pin-latlng-display">
+          <span>
+            {props.pin.latitude.toFixed(4)}, {props.pin.longitude.toFixed(4)}
+          </span>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div class="form-group">
+            <label for="edit-pin-title">Activity Name</label>
+            <input
+              id="edit-pin-title"
+              type="text"
+              value={title()}
+              onInput={(e) => setTitle(e.currentTarget.value)}
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="edit-pin-category">Category</label>
+            <select
+              id="edit-pin-category"
+              value={category()}
+              onChange={(e) => setCategory(e.currentTarget.value)}
+            >
+              <option value="general">General</option>
+              <option value="restaurant">Restaurant</option>
+              <option value="activity">Activity</option>
+              <option value="lodging">Lodging</option>
+              <option value="transport">Transport</option>
+              <option value="sightseeing">Sightseeing</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group form-group-half">
+              <label for="edit-pin-scheduled">Date & Time</label>
+              <input
+                id="edit-pin-scheduled"
+                type="datetime-local"
+                value={scheduledAt()}
+                onInput={(e) => setScheduledAt(e.currentTarget.value)}
+              />
+            </div>
+            <div class="form-group form-group-half">
+              <label for="edit-pin-price">Price ($)</label>
+              <input
+                id="edit-pin-price"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={priceDollars()}
+                onInput={(e) => setPriceDollars(e.currentTarget.value)}
+              />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="edit-pin-desc">Description</label>
+            <textarea
+              id="edit-pin-desc"
+              placeholder="What makes this place special?"
+              value={description()}
+              onInput={(e) => setDescription(e.currentTarget.value)}
+              rows={3}
+            />
+          </div>
+
+          <button type="submit" class="btn-primary" disabled={loading()}>
+            {loading() ? "Saving..." : "Save Changes"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ── Confirm Delete Modal ── */
+
+function ConfirmDeleteModal(props: {
+  pin: ActivityPin;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const handleOverlayClick = (e: MouseEvent) => {
+    if (e.target === e.currentTarget) props.onCancel();
+  };
+
+  return (
+    <div
+      class="modal-overlay"
+      onClick={handleOverlayClick}
+      role="dialog"
+      aria-label="Confirm delete"
+    >
+      <div class="modal-card confirm-delete-modal">
+        <div class="modal-header">
+          <h2>Delete Activity</h2>
+          <button
+            class="modal-close"
+            onClick={props.onCancel}
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
+
+        <p class="confirm-delete-text">
+          Are you sure you want to delete <strong>{props.pin.title}</strong>?
+          This will also remove all attached documents. This action cannot be
+          undone.
+        </p>
+
+        <div class="confirm-delete-actions">
+          <button class="btn-secondary" onClick={props.onCancel}>
+            Cancel
+          </button>
+          <button class="btn-danger" onClick={props.onConfirm}>
+            Delete
+          </button>
+        </div>
       </div>
     </div>
   );
