@@ -81,6 +81,7 @@ export default function TripView() {
   const [expandedPinId, setExpandedPinId] = createSignal<string | null>(null);
   const [editingPin, setEditingPin] = createSignal<ActivityPin | null>(null);
   const [confirmDeletePin, setConfirmDeletePin] = createSignal<ActivityPin | null>(null);
+  const [wsConnected, setWsConnected] = createSignal(false);
 
   let mapContainer!: HTMLDivElement;
   let mapInstance: L.Map | undefined;
@@ -88,6 +89,58 @@ export default function TripView() {
 
   onMount(() => {
     setTimeout(initMap, 100);
+  });
+
+  // ── Real-time WebSocket connection ──
+  onMount(() => {
+    const token = auth.token();
+    if (!token) return;
+
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectDelay = 1000; // start at 1s, doubles on failure, max 30s
+    let closed = false;
+
+    function connect() {
+      if (closed) return;
+
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/api/v1/trips/${params.tripId}/ws?token=${encodeURIComponent(token!)}`;
+
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        setWsConnected(true);
+        reconnectDelay = 1000; // reset on success
+      };
+
+      ws.onmessage = (_event) => {
+        // Any event means data changed — refetch pins
+        refetchPins();
+      };
+
+      ws.onclose = () => {
+        setWsConnected(false);
+        if (!closed) {
+          reconnectTimer = setTimeout(() => {
+            reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+            connect();
+          }, reconnectDelay);
+        }
+      };
+
+      ws.onerror = () => {
+        ws?.close();
+      };
+    }
+
+    connect();
+
+    onCleanup(() => {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
+    });
   });
 
   function initMap() {
@@ -318,6 +371,10 @@ export default function TripView() {
             </Show>
           </div>
           <div class="trip-header-actions">
+            <span class={`ws-status-indicator ${wsConnected() ? "ws-connected" : "ws-disconnected"}`}>
+              <span class="ws-status-dot" />
+              {wsConnected() ? "Live" : "Offline"}
+            </span>
             <span class="trip-member-count">
               {trip()?.member_count ?? 0}{" "}
               {(trip()?.member_count ?? 0) === 1 ? "member" : "members"}

@@ -1,9 +1,11 @@
 mod activity_pins;
 mod auth;
+pub mod realtime;
 mod trips;
 
 use auth::AppState;
-use tower_http::cors::{AllowHeaders, AllowMethods, CorsLayer};
+use axum::extract::DefaultBodyLimit;
+use tower_http::cors::{AllowHeaders, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 #[tokio::main]
@@ -51,10 +53,15 @@ async fn main() {
 
     tracing::info!("Upload directory: {}", upload_dir);
 
+    let broadcaster = realtime::TripBroadcaster::new();
+    // Start background task to periodically clean up empty broadcast channels
+    broadcaster.clone().start_cleanup_task();
+
     let state = AppState {
         pool,
         jwt_secret,
         upload_dir,
+        broadcaster,
     };
 
     let cors_origin = std::env::var("CORS_ORIGIN")
@@ -65,13 +72,20 @@ async fn main() {
                 .parse::<axum::http::HeaderValue>()
                 .expect("Invalid CORS_ORIGIN value"),
         )
-        .allow_methods(AllowMethods::any())
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PUT,
+            axum::http::Method::DELETE,
+            axum::http::Method::OPTIONS,
+        ])
         .allow_headers(AllowHeaders::any());
 
     let app = axum::Router::new()
         .nest("/api/v1/auth", auth::router())
         .nest("/api/v1/trips", trips::router())
         .nest("/api/v1/trips", activity_pins::router())
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10MB max for multipart uploads
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);

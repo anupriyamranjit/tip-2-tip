@@ -16,6 +16,7 @@ pub struct AppState {
     pub pool: sqlx::PgPool,
     pub jwt_secret: String,
     pub upload_dir: String,
+    pub broadcaster: crate::realtime::TripBroadcaster,
 }
 
 pub fn router() -> Router<AppState> {
@@ -237,6 +238,7 @@ mod tests {
             pool,
             jwt_secret: "a]super-secret-key-that-is-at-least-32-chars!!".to_string(),
             upload_dir: std::env::temp_dir().join("tip2tip_test_uploads").to_string_lossy().to_string(),
+            broadcaster: crate::realtime::TripBroadcaster::new(),
         };
         Router::new()
             .nest("/api/v1/auth", router())

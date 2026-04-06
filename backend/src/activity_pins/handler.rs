@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use validator::Validate;
 
 use crate::auth::{AppState, AuthUser};
+use crate::realtime::TripEvent;
 use super::model::*;
 
 pub fn router() -> Router<AppState> {
@@ -18,6 +19,7 @@ pub fn router() -> Router<AppState> {
         .route("/{trip_id}/pins/{pin_id}", get(get_pin).put(update_pin).delete(delete_pin))
         .route("/{trip_id}/pins/{pin_id}/documents", post(upload_document).get(list_documents))
         .route("/{trip_id}/pins/{pin_id}/documents/{doc_id}", get(download_document).delete(delete_document))
+        .route("/{trip_id}/ws", get(super::ws::ws_handler))
 }
 
 /// Verifies the user is a member of the given trip. Returns 404 if not.
@@ -170,7 +172,16 @@ async fn create_pin(
             .await;
 
             match row {
-                Ok(r) => (StatusCode::CREATED, Json(json!(ActivityPinResponse::from_row(r)))),
+                Ok(r) => {
+                    // Broadcast real-time event
+                    state.broadcaster.broadcast(trip_id, TripEvent {
+                        event_type: "pin_created".to_string(),
+                        pin_id: r.id.to_string(),
+                        triggered_by: r.username.clone(),
+                    }).await;
+
+                    (StatusCode::CREATED, Json(json!(ActivityPinResponse::from_row(r))))
+                }
                 Err(_) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({ "error": "Something went wrong" })),
@@ -391,7 +402,16 @@ async fn update_pin(
     .await;
 
     match result {
-        Ok(row) => (StatusCode::OK, Json(json!(ActivityPinResponse::from_row(row)))),
+        Ok(row) => {
+            // Broadcast real-time event
+            state.broadcaster.broadcast(trip_id, TripEvent {
+                event_type: "pin_updated".to_string(),
+                pin_id: row.id.to_string(),
+                triggered_by: row.username.clone(),
+            }).await;
+
+            (StatusCode::OK, Json(json!(ActivityPinResponse::from_row(row))))
+        }
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": "Something went wrong" })),
@@ -471,7 +491,16 @@ async fn delete_pin(
         .await;
 
     match result {
-        Ok(_) => (StatusCode::NO_CONTENT, Json(json!({}))),
+        Ok(_) => {
+            // Broadcast real-time event
+            state.broadcaster.broadcast(trip_id, TripEvent {
+                event_type: "pin_deleted".to_string(),
+                pin_id: pin_id.to_string(),
+                triggered_by: auth_user.username.clone(),
+            }).await;
+
+            (StatusCode::NO_CONTENT, Json(json!({})))
+        }
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": "Something went wrong" })),
@@ -541,6 +570,43 @@ async fn upload_document(
         .unwrap_or("application/octet-stream")
         .to_string();
 
+    // Validate file type — allow common document and image types
+    const ALLOWED_MIMES: &[&str] = &[
+        "application/pdf",
+        "image/jpeg", "image/png", "image/gif", "image/webp",
+        "text/plain", "text/csv",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "application/octet-stream", // fallback for unknown types
+    ];
+    const BLOCKED_EXTENSIONS: &[&str] = &[
+        "exe", "sh", "bat", "cmd", "ps1", "msi", "dll", "so", "dylib",
+        "js", "vbs", "wsf", "jar", "py", "rb", "php", "html", "htm",
+    ];
+
+    let ext_lower = std::path::Path::new(&original_filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    if BLOCKED_EXTENSIONS.contains(&ext_lower.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "File type not allowed for security reasons" })),
+        );
+    }
+
+    if !ALLOWED_MIMES.contains(&mime_type.as_str()) {
+        tracing::warn!("Rejected upload with MIME type: {}", mime_type);
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "File type not allowed. Supported: PDF, images, text, Office documents." })),
+        );
+    }
+
     // Read file bytes (limit to 10MB)
     let data = match field.bytes().await {
         Ok(bytes) => {
@@ -597,6 +663,14 @@ async fn upload_document(
         Ok(row) => {
             let trip_id_str = trip_id.to_string();
             let pin_id_str = pin_id.to_string();
+
+            // Broadcast real-time event
+            state.broadcaster.broadcast(trip_id, TripEvent {
+                event_type: "document_uploaded".to_string(),
+                pin_id: pin_id_str.clone(),
+                triggered_by: auth_user.username.clone(),
+            }).await;
+
             (
                 StatusCode::CREATED,
                 Json(json!(PinDocumentResponse::from_row(row, &trip_id_str, &pin_id_str))),
@@ -666,6 +740,16 @@ async fn download_document(
 
     match doc {
         Ok(Some(row)) => {
+            // Prevent path traversal by ensuring stored_filename has no directory separators
+            if row.stored_filename.contains('/') || row.stored_filename.contains('\\') || row.stored_filename.contains("..") {
+                tracing::warn!("Suspicious stored_filename detected: {}", row.stored_filename);
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": "Something went wrong" })),
+                )
+                    .into_response();
+            }
+
             let file_path = std::path::Path::new(&state.upload_dir).join(&row.stored_filename);
             match tokio::fs::read(&file_path).await {
                 Ok(data) => {
@@ -710,7 +794,7 @@ async fn download_document(
 async fn delete_document(
     State(state): State<AppState>,
     auth_user: AuthUser,
-    Path((trip_id, _pin_id, doc_id)): Path<(uuid::Uuid, uuid::Uuid, uuid::Uuid)>,
+    Path((trip_id, pin_id, doc_id)): Path<(uuid::Uuid, uuid::Uuid, uuid::Uuid)>,
 ) -> impl IntoResponse {
     if let Err(resp) = verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
         return resp;
@@ -754,7 +838,16 @@ async fn delete_document(
                 .await;
 
             match result {
-                Ok(_) => (StatusCode::NO_CONTENT, Json(json!({}))),
+                Ok(_) => {
+                    // Broadcast real-time event
+                    state.broadcaster.broadcast(trip_id, TripEvent {
+                        event_type: "document_deleted".to_string(),
+                        pin_id: pin_id.to_string(),
+                        triggered_by: auth_user.username.clone(),
+                    }).await;
+
+                    (StatusCode::NO_CONTENT, Json(json!({})))
+                }
                 Err(_) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({ "error": "Something went wrong" })),
@@ -791,6 +884,7 @@ mod tests {
             pool,
             jwt_secret: "a]super-secret-key-that-is-at-least-32-chars!!".to_string(),
             upload_dir,
+            broadcaster: crate::realtime::TripBroadcaster::new(),
         };
         Router::new()
             .nest("/api/v1/auth", crate::auth::router())
