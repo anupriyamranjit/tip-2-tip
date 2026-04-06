@@ -11,6 +11,7 @@ import {
 import { useAuth } from "../lib/auth";
 import * as api from "../lib/api";
 import type { ActivityPin, PinDocument } from "../lib/api";
+import Budget from "./Budget";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -352,8 +353,8 @@ export default function TripView() {
             <span class="nav-icon">&#x1F4CD;</span> Itinerary
           </button>
           <button
-            class="sidebar-link trip-nav-link disabled-link"
-            disabled
+            class={`sidebar-link trip-nav-link ${activeTab() === "expenses" ? "active" : ""}`}
+            onClick={() => setActiveTab("expenses")}
           >
             <span class="nav-icon">&#x1F4B0;</span> Expenses
           </button>
@@ -384,7 +385,8 @@ export default function TripView() {
         </div>
       </aside>
 
-      {/* Main content: map area */}
+      {/* Main content: map area (shown when map tab active) */}
+      <Show when={activeTab() === "map"}>
       <div class="trip-main-content">
         {/* Trip header */}
         <header class="trip-header">
@@ -631,6 +633,22 @@ export default function TripView() {
           </Show>
         </Show>
       </aside>
+      </Show>
+
+      {/* Expenses tab */}
+      <Show when={activeTab() === "expenses"}>
+        <div class="trip-main-content budget-content-area">
+          <header class="trip-header">
+            <div>
+              <Show when={trip()} fallback={<h2>Loading...</h2>}>
+                <h2 class="trip-header-title">Budget</h2>
+                <span class="trip-header-dates">{trip()!.name}</span>
+              </Show>
+            </div>
+          </header>
+          <Budget tripId={params.tripId} token={auth.token()!} />
+        </div>
+      </Show>
 
       {/* Add Pin Modal */}
       <Show when={showAddModal() && clickedLatLng()}>

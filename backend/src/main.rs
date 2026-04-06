@@ -1,5 +1,6 @@
 mod activity_pins;
 mod auth;
+mod expenses;
 pub mod realtime;
 mod trips;
 
@@ -85,6 +86,7 @@ async fn main() {
         .nest("/api/v1/auth", auth::router())
         .nest("/api/v1/trips", trips::router())
         .nest("/api/v1/trips", activity_pins::router())
+        .nest("/api/v1/trips", expenses::router())
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10MB max for multipart uploads
         .layer(cors)
         .layer(TraceLayer::new_for_http())

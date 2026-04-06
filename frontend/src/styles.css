@@ -1481,3 +1481,310 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
+
+/* ══════════════════════════════════════════
+   Budget / Expenses Page
+   ══════════════════════════════════════════ */
+
+.budget-content-area {
+  overflow-y: auto;
+}
+
+.budget-page {
+  padding: var(--space-xl);
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+/* ── Summary Cards ── */
+.budget-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-md);
+  margin-bottom: var(--space-xl);
+}
+
+.budget-summary-card {
+  background: var(--surface-lowest);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.budget-card-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--on-surface-muted);
+}
+
+.budget-card-amount {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+  color: var(--on-surface);
+}
+
+.budget-total .budget-card-amount {
+  color: var(--primary);
+}
+
+.budget-shared .budget-card-amount {
+  color: var(--tertiary);
+}
+
+.budget-personal .budget-card-amount {
+  color: var(--secondary);
+}
+
+/* ── Actions Row ── */
+.budget-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-lg);
+}
+
+.budget-filter-group {
+  display: flex;
+  background: var(--surface-low);
+  border-radius: var(--radius-full);
+  padding: 3px;
+}
+
+.budget-filter-btn {
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--on-surface-muted);
+  padding: 0.4rem 1rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.budget-filter-btn.active {
+  background: var(--surface-lowest);
+  color: var(--on-surface);
+  box-shadow: 0 1px 4px rgba(7, 30, 39, 0.06);
+}
+
+.budget-add-btn {
+  border: none;
+  background: linear-gradient(135deg, var(--primary), var(--primary-container));
+  color: var(--on-primary);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 0.55rem 1.2rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.budget-add-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 63, 163, 0.2);
+}
+
+/* ── Empty State ── */
+.budget-empty-state {
+  text-align: center;
+  padding: var(--space-2xl) var(--space-md);
+  color: var(--on-surface-muted);
+}
+
+.budget-empty-hint {
+  font-size: 0.82rem;
+  margin-top: var(--space-sm);
+  opacity: 0.7;
+}
+
+/* ── Expense List ── */
+.budget-expense-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.budget-expense-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  background: var(--surface-lowest);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md) var(--space-lg);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.budget-expense-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(7, 30, 39, 0.04);
+}
+
+.budget-expense-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 1.1rem;
+  background: var(--surface-low);
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.budget-expense-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.budget-expense-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.budget-expense-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--on-surface);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.budget-expense-amount {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.budget-expense-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: 2px;
+}
+
+.budget-expense-category {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--on-surface-muted);
+}
+
+.budget-expense-source {
+  font-size: 0.65rem;
+  color: var(--tertiary);
+  font-weight: 600;
+}
+
+.budget-expense-by {
+  font-size: 0.65rem;
+  color: var(--on-surface-muted);
+}
+
+.budget-expense-notes {
+  font-size: 0.78rem;
+  color: var(--on-surface-muted);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.budget-expense-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+/* ── Split Badge ── */
+.budget-split-badge {
+  border: none;
+  font-family: var(--font-body);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.budget-split-badge.shared {
+  background: rgba(0, 106, 98, 0.1);
+  color: var(--tertiary);
+}
+
+.budget-split-badge.personal {
+  background: rgba(172, 53, 9, 0.1);
+  color: var(--secondary);
+}
+
+.budget-split-badge:hover {
+  transform: scale(1.05);
+}
+
+.budget-expense-edit-btn,
+.budget-expense-delete-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--on-surface-muted);
+  padding: 0.2rem;
+  border-radius: var(--radius-md);
+  transition: color 0.15s, background 0.15s;
+  line-height: 1;
+}
+
+.budget-expense-edit-btn:hover {
+  color: var(--primary);
+  background: rgba(0, 63, 163, 0.06);
+}
+
+.budget-expense-delete-btn:hover {
+  color: var(--error);
+  background: var(--error-container);
+}
+
+/* ── Split Toggle (in modals) ── */
+.split-toggle {
+  display: flex;
+  background: var(--surface-low);
+  border-radius: var(--radius-full);
+  padding: 3px;
+}
+
+.split-toggle-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--on-surface-muted);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.split-toggle-btn.active {
+  background: var(--surface-lowest);
+  color: var(--on-surface);
+  box-shadow: 0 1px 4px rgba(7, 30, 39, 0.08);
+}

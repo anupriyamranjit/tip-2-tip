@@ -280,3 +280,85 @@ export function deleteVote(
     method: "DELETE",
   });
 }
+
+/* ── Expenses ── */
+
+export interface Expense {
+  id: string;
+  trip_id: string;
+  user_id: string;
+  activity_pin_id: string | null;
+  title: string;
+  amount_cents: number;
+  category: string;
+  split_type: string;
+  notes: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface CreateExpensePayload {
+  title: string;
+  amount_cents: number;
+  category?: string;
+  split_type?: string;
+  notes?: string;
+  activity_pin_id?: string;
+}
+
+export interface UpdateExpensePayload {
+  title?: string;
+  amount_cents?: number;
+  category?: string;
+  split_type?: string;
+  notes?: string;
+}
+
+export function listExpenses(
+  token: string,
+  tripId: string
+): Promise<{ expenses: Expense[] }> {
+  return authRequest(`/trips/${tripId}/expenses`, token);
+}
+
+export function createExpense(
+  token: string,
+  tripId: string,
+  payload: CreateExpensePayload
+): Promise<Expense> {
+  return authRequest(`/trips/${tripId}/expenses`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateExpense(
+  token: string,
+  tripId: string,
+  expenseId: string,
+  payload: UpdateExpensePayload
+): Promise<Expense> {
+  return authRequest(`/trips/${tripId}/expenses/${expenseId}`, token, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteExpense(
+  token: string,
+  tripId: string,
+  expenseId: string
+): Promise<void> {
+  return authRequest(`/trips/${tripId}/expenses/${expenseId}`, token, {
+    method: "DELETE",
+  });
+}
+
+export function syncExpenses(
+  token: string,
+  tripId: string
+): Promise<{ expenses: Expense[]; synced: number }> {
+  return authRequest(`/trips/${tripId}/expenses/sync`, token, {
+    method: "POST",
+  });
+}
