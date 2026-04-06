@@ -458,12 +458,12 @@ export default function TripView() {
                       </div>
                       <span
                         class={`status-badge status-${pin.status}`}
-                        style={{ cursor: "pointer", "font-size": "0.55rem" }}
+                        style={{ cursor: liveEditing() ? "pointer" : "default", "font-size": "0.55rem" }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleToggleStatus(pin);
+                          if (liveEditing()) handleToggleStatus(pin);
                         }}
-                        title="Click to toggle status"
+                        title={liveEditing() ? "Click to toggle status" : pin.status}
                       >
                         {pin.status}
                       </span>
