@@ -5,7 +5,7 @@
       "name": "frontend",
       "runtimeExecutable": "/bin/bash",
       "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && cd frontend && npm run dev"],
-      "port": 3000
+      "port": 3001
     }
   ]
 }

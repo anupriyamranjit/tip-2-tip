@@ -699,8 +699,9 @@ body {
 /* ── Trip View Layout ── */
 .trip-view-layout {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
   background: var(--surface);
+  overflow: hidden;
 }
 
 .trip-nav-sidebar {
@@ -952,7 +953,7 @@ body {
 /* ── Pin List Panel (right sidebar) ── */
 .pin-list-panel {
   width: 320px;
-  min-height: 100vh;
+  height: 100%;
   background: var(--surface-lowest);
   overflow-y: auto;
   padding: var(--space-lg);
