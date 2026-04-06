@@ -82,6 +82,7 @@ export default function TripView() {
   const [editingPin, setEditingPin] = createSignal<ActivityPin | null>(null);
   const [confirmDeletePin, setConfirmDeletePin] = createSignal<ActivityPin | null>(null);
   const [wsConnected, setWsConnected] = createSignal(false);
+  const [liveEditing, setLiveEditing] = createSignal(false);
 
   let mapContainer!: HTMLDivElement;
   let mapInstance: L.Map | undefined;
@@ -91,56 +92,68 @@ export default function TripView() {
     setTimeout(initMap, 100);
   });
 
-  // ── Real-time WebSocket connection ──
-  onMount(() => {
+  // ── Real-time WebSocket connection (opt-in) ──
+  let wsRef: WebSocket | null = null;
+  let reconnectTimerRef: ReturnType<typeof setTimeout> | null = null;
+  let reconnectDelay = 1000;
+  let intentionallyClosed = false;
+
+  function connectWs() {
     const token = auth.token();
     if (!token) return;
 
-    let ws: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let reconnectDelay = 1000; // start at 1s, doubles on failure, max 30s
-    let closed = false;
+    intentionallyClosed = false;
 
-    function connect() {
-      if (closed) return;
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${protocol}//${window.location.host}/api/v1/trips/${params.tripId}/ws?token=${encodeURIComponent(token)}`;
 
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${window.location.host}/api/v1/trips/${params.tripId}/ws?token=${encodeURIComponent(token!)}`;
+    wsRef = new WebSocket(wsUrl);
 
-      ws = new WebSocket(wsUrl);
+    wsRef.onopen = () => {
+      setWsConnected(true);
+      reconnectDelay = 1000;
+    };
 
-      ws.onopen = () => {
-        setWsConnected(true);
-        reconnectDelay = 1000; // reset on success
-      };
+    wsRef.onmessage = (_event) => {
+      // Any event means data changed — refetch pins
+      refetchPins();
+    };
 
-      ws.onmessage = (_event) => {
-        // Any event means data changed — refetch pins
-        refetchPins();
-      };
+    wsRef.onclose = () => {
+      setWsConnected(false);
+      if (!intentionallyClosed) {
+        reconnectTimerRef = setTimeout(() => {
+          reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+          connectWs();
+        }, reconnectDelay);
+      }
+    };
 
-      ws.onclose = () => {
-        setWsConnected(false);
-        if (!closed) {
-          reconnectTimer = setTimeout(() => {
-            reconnectDelay = Math.min(reconnectDelay * 2, 30000);
-            connect();
-          }, reconnectDelay);
-        }
-      };
+    wsRef.onerror = () => {
+      wsRef?.close();
+    };
+  }
 
-      ws.onerror = () => {
-        ws?.close();
-      };
+  function disconnectWs() {
+    intentionallyClosed = true;
+    if (reconnectTimerRef) clearTimeout(reconnectTimerRef);
+    wsRef?.close();
+    wsRef = null;
+    setWsConnected(false);
+    setLiveEditing(false);
+  }
+
+  function toggleLiveEditing() {
+    if (liveEditing()) {
+      disconnectWs();
+    } else {
+      setLiveEditing(true);
+      connectWs();
     }
+  }
 
-    connect();
-
-    onCleanup(() => {
-      closed = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      ws?.close();
-    });
+  onCleanup(() => {
+    disconnectWs();
   });
 
   function initMap() {
@@ -169,6 +182,7 @@ export default function TripView() {
     markersLayer = L.layerGroup().addTo(mapInstance);
 
     mapInstance.on("click", (e: L.LeafletMouseEvent) => {
+      if (!liveEditing()) return; // Only allow adding pins when live editing
       setClickedLatLng({ lat: e.latlng.lat, lng: e.latlng.lng });
       setShowAddModal(true);
     });
@@ -371,10 +385,18 @@ export default function TripView() {
             </Show>
           </div>
           <div class="trip-header-actions">
-            <span class={`ws-status-indicator ${wsConnected() ? "ws-connected" : "ws-disconnected"}`}>
-              <span class="ws-status-dot" />
-              {wsConnected() ? "Live" : "Offline"}
-            </span>
+            <button
+              class={`live-edit-toggle ${liveEditing() ? (wsConnected() ? "live-active" : "live-connecting") : "live-inactive"}`}
+              onClick={toggleLiveEditing}
+              title={liveEditing() ? "Leave live editing session" : "Join live editing session"}
+            >
+              <span class="live-edit-dot" />
+              {liveEditing()
+                ? wsConnected()
+                  ? "Live Editing"
+                  : "Connecting..."
+                : "Join Live Edit"}
+            </button>
             <span class="trip-member-count">
               {trip()?.member_count ?? 0}{" "}
               {(trip()?.member_count ?? 0) === 1 ? "member" : "members"}
@@ -387,7 +409,11 @@ export default function TripView() {
 
         {/* Click-to-add hint */}
         <div class="map-hint">
-          <span>Click anywhere on the map to add an activity pin</span>
+          <span>
+            {liveEditing()
+              ? "Click anywhere on the map to add an activity pin"
+              : "Join live editing to add or modify activity pins"}
+          </span>
         </div>
       </div>
 
@@ -502,16 +528,18 @@ export default function TripView() {
                               <span class="pin-doc-size">
                                 {formatFileSize(doc.file_size_bytes)}
                               </span>
-                              <button
-                                class="pin-doc-delete"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteDocument(pin.id, doc.id);
-                                }}
-                                title="Delete document"
-                              >
-                                &times;
-                              </button>
+                              <Show when={liveEditing()}>
+                                <button
+                                  class="pin-doc-delete"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteDocument(pin.id, doc.id);
+                                  }}
+                                  title="Delete document"
+                                >
+                                  &times;
+                                </button>
+                              </Show>
                             </div>
                           )}
                         </For>
@@ -520,44 +548,46 @@ export default function TripView() {
 
                     <div class="pin-card-footer">
                       <span class="pin-card-author">by {pin.created_by}</span>
-                      <div class="pin-card-actions">
-                        <label
-                          class="pin-upload-btn"
-                          title="Upload document"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          &#x1F4CE;
-                          <input
-                            type="file"
-                            hidden
-                            onChange={(e) => {
-                              const file = e.currentTarget.files?.[0];
-                              if (file) handleUploadDocument(pin.id, file);
-                              e.currentTarget.value = "";
+                      <Show when={liveEditing()}>
+                        <div class="pin-card-actions">
+                          <label
+                            class="pin-upload-btn"
+                            title="Upload document"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            &#x1F4CE;
+                            <input
+                              type="file"
+                              hidden
+                              onChange={(e) => {
+                                const file = e.currentTarget.files?.[0];
+                                if (file) handleUploadDocument(pin.id, file);
+                                e.currentTarget.value = "";
+                              }}
+                            />
+                          </label>
+                          <button
+                            class="pin-edit-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingPin(pin);
                             }}
-                          />
-                        </label>
-                        <button
-                          class="pin-edit-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingPin(pin);
-                          }}
-                          title="Edit pin"
-                        >
-                          &#x270E;
-                        </button>
-                        <button
-                          class="pin-delete-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmDeletePin(pin);
-                          }}
-                          title="Delete pin"
-                        >
-                          &times;
-                        </button>
-                      </div>
+                            title="Edit pin"
+                          >
+                            &#x270E;
+                          </button>
+                          <button
+                            class="pin-delete-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeletePin(pin);
+                            }}
+                            title="Delete pin"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      </Show>
                     </div>
                   </div>
                 )}

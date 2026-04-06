@@ -1342,48 +1342,77 @@ body {
   opacity: 0.9;
 }
 
-/* ── WebSocket Status Indicator ── */
-.ws-status-indicator {
+/* ── Live Edit Toggle Button ── */
+.live-edit-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.7rem;
-  font-weight: 600;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 0.25rem 0.6rem;
+  padding: 0.35rem 0.8rem;
   border-radius: var(--radius-full, 9999px);
-  transition: all 0.3s ease;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.ws-status-dot {
-  width: 7px;
-  height: 7px;
+.live-edit-dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   display: inline-block;
+  flex-shrink: 0;
 }
 
-.ws-connected {
-  color: #2E7D32;
-  background: #E8F5E9;
-}
-
-.ws-connected .ws-status-dot {
-  background: #4CAF50;
-  box-shadow: 0 0 6px #4CAF50;
-  animation: ws-pulse 2s ease-in-out infinite;
-}
-
-.ws-disconnected {
+/* Inactive: gray, inviting to click */
+.live-inactive {
   color: var(--on-surface-muted);
   background: var(--surface-low);
 }
 
-.ws-disconnected .ws-status-dot {
+.live-inactive:hover {
+  background: var(--surface-lowest);
+  color: var(--primary);
+}
+
+.live-inactive .live-edit-dot {
   background: var(--on-surface-muted);
 }
 
-@keyframes ws-pulse {
+.live-inactive:hover .live-edit-dot {
+  background: var(--primary);
+}
+
+/* Active: green, pulsing dot */
+.live-active {
+  color: #2E7D32;
+  background: #E8F5E9;
+}
+
+.live-active:hover {
+  background: #C8E6C9;
+}
+
+.live-active .live-edit-dot {
+  background: #4CAF50;
+  box-shadow: 0 0 6px #4CAF50;
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+/* Connecting: amber, blinking */
+.live-connecting {
+  color: #E65100;
+  background: #FFF3E0;
+}
+
+.live-connecting .live-edit-dot {
+  background: #FF9800;
+  animation: live-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50% { opacity: 0.3; }
 }
