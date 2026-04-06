@@ -1067,6 +1067,116 @@ body {
   margin-bottom: var(--space-sm);
 }
 
+.pin-card-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: var(--space-sm);
+}
+
+.pin-detail-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--on-surface-muted);
+  background: var(--surface-low);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.5rem;
+}
+
+.pin-detail-icon {
+  font-size: 0.75rem;
+}
+
+.pin-detail-price {
+  color: var(--primary);
+}
+
+/* ── Pin Documents ── */
+.pin-documents-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-xs);
+}
+
+.pin-documents-label {
+  font-size: 0.7rem;
+  color: var(--on-surface-muted);
+  font-weight: 600;
+}
+
+.pin-docs-toggle {
+  font-size: 0.65rem;
+  color: var(--primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.pin-documents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: var(--space-sm);
+  padding: 0.4rem;
+  background: var(--surface-low);
+  border-radius: var(--radius-sm);
+}
+
+.pin-doc-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+}
+
+.pin-doc-name {
+  flex: 1;
+  color: var(--primary);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.pin-doc-name:hover {
+  text-decoration: underline;
+}
+
+.pin-doc-size {
+  color: var(--on-surface-muted);
+  font-size: 0.62rem;
+  flex-shrink: 0;
+}
+
+.pin-doc-delete {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--on-surface-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.pin-doc-delete:hover {
+  background: var(--error-container);
+  color: var(--error);
+}
+
 .pin-card-footer {
   display: flex;
   justify-content: space-between;
@@ -1077,6 +1187,31 @@ body {
   font-size: 0.68rem;
   color: var(--on-surface-muted);
   font-style: italic;
+}
+
+.pin-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.pin-upload-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--on-surface-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pin-upload-btn:hover {
+  background: var(--surface-low);
+  color: var(--primary);
 }
 
 .pin-delete-btn {
@@ -1098,6 +1233,29 @@ body {
 .pin-delete-btn:hover {
   background: var(--error-container);
   color: var(--error);
+}
+
+/* ── Form Row (side by side fields) ── */
+.form-row {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.form-group-half {
+  flex: 1;
+}
+
+/* ── Map popup schedule/price ── */
+.pin-popup-schedule,
+.pin-popup-price {
+  font-size: 0.78rem;
+  color: var(--on-surface-muted);
+  margin-top: 0.25rem;
+}
+
+.pin-popup-price {
+  font-weight: 600;
+  color: var(--primary);
 }
 
 /* ── Pin LatLng Display (in modal) ── */

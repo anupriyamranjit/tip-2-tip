@@ -10,7 +10,7 @@ import {
 } from "solid-js";
 import { useAuth } from "../lib/auth";
 import * as api from "../lib/api";
-import type { ActivityPin } from "../lib/api";
+import type { ActivityPin, PinDocument } from "../lib/api";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -30,6 +30,26 @@ const CATEGORY_ICONS: Record<string, string> = {
   sightseeing: "\uD83C\uDFDB\uFE0F",
   general: "\uD83D\uDCCD",
 };
+
+function formatPrice(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+function formatScheduledAt(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function TripView() {
   const params = useParams<{ tripId: string }>();
@@ -58,13 +78,13 @@ export default function TripView() {
     lng: number;
   } | null>(null);
   const [activeTab, setActiveTab] = createSignal("map");
+  const [expandedPinId, setExpandedPinId] = createSignal<string | null>(null);
 
   let mapContainer!: HTMLDivElement;
   let mapInstance: L.Map | undefined;
   let markersLayer: L.LayerGroup | undefined;
 
   onMount(() => {
-    // Small delay to ensure container is rendered
     setTimeout(initMap, 100);
   });
 
@@ -127,10 +147,18 @@ export default function TripView() {
 
       const marker = L.marker([pin.latitude, pin.longitude], { icon });
 
+      const scheduledHtml = pin.scheduled_at
+        ? `<div class="pin-popup-schedule">${formatScheduledAt(pin.scheduled_at)}</div>`
+        : "";
+      const priceHtml = pin.price_cents
+        ? `<div class="pin-popup-price">${formatPrice(pin.price_cents)}</div>`
+        : "";
+
       const popupContent = `
         <div class="pin-popup">
           <div class="pin-popup-title">${pin.title}</div>
           ${pin.description ? `<div class="pin-popup-desc">${pin.description}</div>` : ""}
+          ${scheduledHtml}${priceHtml}
           <div class="pin-popup-meta">
             <span class="pin-popup-category">${pin.category.toUpperCase()}</span>
             <span class="pin-popup-status status-badge status-${pin.status}">${pin.status}</span>
@@ -186,6 +214,24 @@ export default function TripView() {
       refetchPins();
     } catch (err: any) {
       console.error("Failed to update pin:", err);
+    }
+  };
+
+  const handleUploadDocument = async (pinId: string, file: File) => {
+    try {
+      await api.uploadDocument(auth.token()!, params.tripId, pinId, file);
+      refetchPins();
+    } catch (err: any) {
+      console.error("Failed to upload document:", err);
+    }
+  };
+
+  const handleDeleteDocument = async (pinId: string, docId: string) => {
+    try {
+      await api.deleteDocument(auth.token()!, params.tripId, pinId, docId);
+      refetchPins();
+    } catch (err: any) {
+      console.error("Failed to delete document:", err);
     }
   };
 
@@ -310,7 +356,10 @@ export default function TripView() {
             <div class="pin-list">
               <For each={pins()}>
                 {(pin) => (
-                  <div class="pin-card" onClick={() => panToPin(pin)}>
+                  <div
+                    class={`pin-card ${expandedPinId() === pin.id ? "pin-card-expanded" : ""}`}
+                    onClick={() => panToPin(pin)}
+                  >
                     <div class="pin-card-header">
                       <span class="pin-card-emoji">
                         {CATEGORY_ICONS[pin.category] || CATEGORY_ICONS.general}
@@ -333,21 +382,112 @@ export default function TripView() {
                         {pin.status}
                       </span>
                     </div>
+
                     <Show when={pin.description}>
                       <p class="pin-card-desc">{pin.description}</p>
                     </Show>
+
+                    {/* Schedule and price row */}
+                    <Show when={pin.scheduled_at || pin.price_cents}>
+                      <div class="pin-card-details">
+                        <Show when={pin.scheduled_at}>
+                          <span class="pin-detail-chip">
+                            <span class="pin-detail-icon">&#x1F4C5;</span>
+                            {formatScheduledAt(pin.scheduled_at!)}
+                          </span>
+                        </Show>
+                        <Show when={pin.price_cents}>
+                          <span class="pin-detail-chip pin-detail-price">
+                            <span class="pin-detail-icon">&#x1F4B0;</span>
+                            {formatPrice(pin.price_cents!)}
+                          </span>
+                        </Show>
+                      </div>
+                    </Show>
+
+                    {/* Documents section */}
+                    <Show when={pin.documents && pin.documents.length > 0}>
+                      <div class="pin-documents-section">
+                        <span class="pin-documents-label">
+                          &#x1F4CE; {pin.documents.length} document{pin.documents.length !== 1 ? "s" : ""}
+                        </span>
+                        <button
+                          class="pin-docs-toggle"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedPinId(
+                              expandedPinId() === pin.id ? null : pin.id
+                            );
+                          }}
+                        >
+                          {expandedPinId() === pin.id ? "Hide" : "Show"}
+                        </button>
+                      </div>
+                    </Show>
+
+                    <Show when={expandedPinId() === pin.id && pin.documents}>
+                      <div class="pin-documents-list">
+                        <For each={pin.documents}>
+                          {(doc) => (
+                            <div class="pin-doc-item">
+                              <a
+                                class="pin-doc-name"
+                                href={`/api/v1${doc.download_url}`}
+                                target="_blank"
+                                rel="noopener"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {doc.original_filename}
+                              </a>
+                              <span class="pin-doc-size">
+                                {formatFileSize(doc.file_size_bytes)}
+                              </span>
+                              <button
+                                class="pin-doc-delete"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteDocument(pin.id, doc.id);
+                                }}
+                                title="Delete document"
+                              >
+                                &times;
+                              </button>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+
                     <div class="pin-card-footer">
                       <span class="pin-card-author">by {pin.created_by}</span>
-                      <button
-                        class="pin-delete-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeletePin(pin.id);
-                        }}
-                        title="Delete pin"
-                      >
-                        &times;
-                      </button>
+                      <div class="pin-card-actions">
+                        <label
+                          class="pin-upload-btn"
+                          title="Upload document"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          &#x1F4CE;
+                          <input
+                            type="file"
+                            hidden
+                            onChange={(e) => {
+                              const file = e.currentTarget.files?.[0];
+                              if (file) handleUploadDocument(pin.id, file);
+                              e.currentTarget.value = "";
+                            }}
+                          />
+                        </label>
+                        <button
+                          class="pin-delete-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeletePin(pin.id);
+                          }}
+                          title="Delete pin"
+                        >
+                          &times;
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -388,6 +528,8 @@ function AddPinModal(props: {
   const [title, setTitle] = createSignal("");
   const [description, setDescription] = createSignal("");
   const [category, setCategory] = createSignal("general");
+  const [scheduledAt, setScheduledAt] = createSignal("");
+  const [priceDollars, setPriceDollars] = createSignal("");
   const [error, setError] = createSignal("");
   const [loading, setLoading] = createSignal(false);
 
@@ -404,6 +546,20 @@ function AddPinModal(props: {
         category: category(),
       };
       if (description()) payload.description = description();
+
+      // Convert local datetime to RFC3339
+      if (scheduledAt()) {
+        const dt = new Date(scheduledAt());
+        payload.scheduled_at = dt.toISOString();
+      }
+
+      // Convert dollar amount to cents
+      if (priceDollars()) {
+        const cents = Math.round(parseFloat(priceDollars()) * 100);
+        if (!isNaN(cents) && cents > 0) {
+          payload.price_cents = cents;
+        }
+      }
 
       await api.createPin(props.token, props.tripId, payload);
       props.onCreated();
@@ -472,6 +628,30 @@ function AddPinModal(props: {
               <option value="transport">Transport</option>
               <option value="sightseeing">Sightseeing</option>
             </select>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group form-group-half">
+              <label for="pin-scheduled">Date & Time</label>
+              <input
+                id="pin-scheduled"
+                type="datetime-local"
+                value={scheduledAt()}
+                onInput={(e) => setScheduledAt(e.currentTarget.value)}
+              />
+            </div>
+            <div class="form-group form-group-half">
+              <label for="pin-price">Price ($)</label>
+              <input
+                id="pin-price"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={priceDollars()}
+                onInput={(e) => setPriceDollars(e.currentTarget.value)}
+              />
+            </div>
           </div>
 
           <div class="form-group">

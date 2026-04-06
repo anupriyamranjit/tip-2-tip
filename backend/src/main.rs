@@ -41,9 +41,20 @@ async fn main() {
 
     tracing::info!("Database connected and migrations applied");
 
+    let upload_dir = std::env::var("UPLOAD_DIR")
+        .unwrap_or_else(|_| "/data/uploads".to_string());
+
+    // Ensure upload directory exists
+    tokio::fs::create_dir_all(&upload_dir)
+        .await
+        .expect("Failed to create upload directory");
+
+    tracing::info!("Upload directory: {}", upload_dir);
+
     let state = AppState {
         pool,
         jwt_secret,
+        upload_dir,
     };
 
     let cors_origin = std::env::var("CORS_ORIGIN")

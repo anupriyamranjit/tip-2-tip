@@ -116,6 +116,15 @@ export function createTrip(
 
 /* ── Activity Pins ── */
 
+export interface PinDocument {
+  id: string;
+  original_filename: string;
+  mime_type: string;
+  file_size_bytes: number;
+  download_url: string;
+  created_at: string;
+}
+
 export interface ActivityPin {
   id: string;
   trip_id: string;
@@ -127,6 +136,9 @@ export interface ActivityPin {
   category: string;
   status: string;
   image_url: string | null;
+  scheduled_at: string | null;
+  price_cents: number | null;
+  documents: PinDocument[];
   created_by: string;
   created_at: string;
 }
@@ -138,6 +150,8 @@ export interface CreatePinPayload {
   longitude: number;
   category?: string;
   image_url?: string;
+  scheduled_at?: string;
+  price_cents?: number;
 }
 
 export interface UpdatePinPayload {
@@ -148,6 +162,8 @@ export interface UpdatePinPayload {
   category?: string;
   status?: string;
   image_url?: string;
+  scheduled_at?: string;
+  price_cents?: number;
 }
 
 export function listPins(
@@ -186,6 +202,48 @@ export function deletePin(
   pinId: string
 ): Promise<void> {
   return authRequest(`/trips/${tripId}/pins/${pinId}`, token, {
+    method: "DELETE",
+  });
+}
+
+/* ── Pin Documents ── */
+
+export async function uploadDocument(
+  token: string,
+  tripId: string,
+  pinId: string,
+  file: File
+): Promise<PinDocument> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${BASE}/trips/${tripId}/pins/${pinId}/documents`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (res.status === 401) {
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("user");
+    window.location.href = "/login";
+    throw new Error("Session expired. Please log in again.");
+  }
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Upload failed");
+  return data as PinDocument;
+}
+
+export function deleteDocument(
+  token: string,
+  tripId: string,
+  pinId: string,
+  docId: string
+): Promise<void> {
+  return authRequest(`/trips/${tripId}/pins/${pinId}/documents/${docId}`, token, {
     method: "DELETE",
   });
 }

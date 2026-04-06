@@ -25,6 +25,9 @@ services:
       JWT_SECRET: dev-secret-key-that-is-at-least-32-characters-long
       CORS_ORIGIN: http://localhost:3000
       RUST_LOG: tip2tip_backend=debug,tower_http=debug
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -40,3 +43,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:
