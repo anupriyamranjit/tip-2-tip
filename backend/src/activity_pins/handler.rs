@@ -1,10 +1,11 @@
 use axum::{
-    extract::{Multipart, Path, State},
+    extract::{Multipart, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
+use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
 use validator::Validate;
@@ -12,6 +13,21 @@ use validator::Validate;
 use crate::auth::{AppState, AuthUser};
 use crate::realtime::TripEvent;
 use super::model::*;
+
+#[derive(Debug, Deserialize)]
+pub struct PaginationParams {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+impl PaginationParams {
+    fn limit(&self) -> i64 {
+        self.limit.unwrap_or(50).min(100).max(1)
+    }
+    fn offset(&self) -> i64 {
+        self.offset.unwrap_or(0).max(0)
+    }
+}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -103,6 +119,7 @@ async fn fetch_documents_for_pins(
 }
 
 /// Fetches vote summaries for a list of pins, including the current user's vote.
+/// Uses a single query with conditional aggregation for efficiency.
 async fn fetch_votes_for_pins(
     pool: &sqlx::PgPool,
     pin_ids: &[uuid::Uuid],
@@ -112,44 +129,32 @@ async fn fetch_votes_for_pins(
         return Ok(HashMap::new());
     }
 
-    // Aggregate votes per pin
-    let rows = sqlx::query_as::<_, (uuid::Uuid, i64, i64)>(
+    // Single query: aggregate votes and get current user's vote via conditional aggregation
+    let rows = sqlx::query_as::<_, (uuid::Uuid, i64, i64, i16)>(
         "SELECT pin_id, \
          COALESCE(SUM(CASE WHEN vote = 1 THEN 1 ELSE 0 END), 0) as upvotes, \
-         COALESCE(SUM(CASE WHEN vote = -1 THEN 1 ELSE 0 END), 0) as downvotes \
+         COALESCE(SUM(CASE WHEN vote = -1 THEN 1 ELSE 0 END), 0) as downvotes, \
+         COALESCE(MAX(CASE WHEN user_id = $2 THEN vote ELSE NULL END), 0)::smallint as user_vote \
          FROM pin_votes WHERE pin_id = ANY($1) GROUP BY pin_id",
-    )
-    .bind(pin_ids)
-    .fetch_all(pool)
-    .await?;
-
-    // Current user's votes
-    let user_votes = sqlx::query_as::<_, (uuid::Uuid, i16)>(
-        "SELECT pin_id, vote FROM pin_votes WHERE pin_id = ANY($1) AND user_id = $2",
     )
     .bind(pin_ids)
     .bind(current_user_id)
     .fetch_all(pool)
     .await?;
 
-    let user_vote_map: HashMap<uuid::Uuid, i16> = user_votes.into_iter().collect();
-
     let mut map: HashMap<uuid::Uuid, PinVoteSummary> = HashMap::new();
-    for (pin_id, upvotes, downvotes) in rows {
+    for (pin_id, upvotes, downvotes, user_vote) in rows {
         map.insert(pin_id, PinVoteSummary {
             upvotes,
             downvotes,
             score: upvotes - downvotes,
-            user_vote: user_vote_map.get(&pin_id).copied().unwrap_or(0),
+            user_vote,
         });
     }
 
     // Ensure all requested pins have a summary (even if 0 votes)
     for pid in pin_ids {
-        map.entry(*pid).or_insert_with(|| PinVoteSummary {
-            user_vote: user_vote_map.get(pid).copied().unwrap_or(0),
-            ..Default::default()
-        });
+        map.entry(*pid).or_insert_with(|| PinVoteSummary::default());
     }
 
     Ok(map)
@@ -253,18 +258,25 @@ async fn list_pins(
     State(state): State<AppState>,
     auth_user: AuthUser,
     Path(trip_id): Path<uuid::Uuid>,
+    Query(pagination): Query<PaginationParams>,
 ) -> impl IntoResponse {
     if let Err(resp) = verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
         return resp;
     }
 
+    let limit = pagination.limit();
+    let offset = pagination.offset();
+
     let pins = sqlx::query_as::<_, ActivityPinRow>(
         "SELECT p.*, u.username FROM activity_pins p \
          JOIN users u ON p.user_id = u.id \
          WHERE p.trip_id = $1 \
-         ORDER BY p.created_at DESC",
+         ORDER BY p.created_at DESC \
+         LIMIT $2 OFFSET $3",
     )
     .bind(trip_id)
+    .bind(limit)
+    .bind(offset)
     .fetch_all(&state.pool)
     .await;
 
@@ -655,17 +667,17 @@ async fn delete_pin(
         }
     }
 
-    // Delete associated files from disk
-    let docs = sqlx::query_as::<_, PinDocumentRow>(
-        "SELECT * FROM pin_documents WHERE pin_id = $1",
+    // Delete associated files from disk (only fetch filenames needed for cleanup)
+    let filenames = sqlx::query_scalar::<_, String>(
+        "SELECT stored_filename FROM pin_documents WHERE pin_id = $1",
     )
     .bind(pin_id)
     .fetch_all(&state.pool)
     .await;
 
-    if let Ok(docs) = docs {
-        for doc in docs {
-            let path = std::path::Path::new(&state.upload_dir).join(&doc.stored_filename);
+    if let Ok(filenames) = filenames {
+        for filename in filenames {
+            let path = std::path::Path::new(&state.upload_dir).join(&filename);
             let _ = tokio::fs::remove_file(path).await;
         }
     }
@@ -878,15 +890,21 @@ async fn list_documents(
     State(state): State<AppState>,
     auth_user: AuthUser,
     Path((trip_id, pin_id)): Path<(uuid::Uuid, uuid::Uuid)>,
+    Query(pagination): Query<PaginationParams>,
 ) -> impl IntoResponse {
     if let Err(resp) = verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
         return resp;
     }
 
+    let limit = pagination.limit();
+    let offset = pagination.offset();
+
     let docs = sqlx::query_as::<_, PinDocumentRow>(
-        "SELECT * FROM pin_documents WHERE pin_id = $1 ORDER BY created_at DESC",
+        "SELECT * FROM pin_documents WHERE pin_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
     )
     .bind(pin_id)
+    .bind(limit)
+    .bind(offset)
     .fetch_all(&state.pool)
     .await;
 

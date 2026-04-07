@@ -6,7 +6,8 @@ mod trips;
 
 use auth::AppState;
 use axum::extract::DefaultBodyLimit;
-use tower_http::cors::{AllowHeaders, CorsLayer};
+use axum::http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 #[tokio::main]
@@ -31,7 +32,10 @@ async fn main() {
     );
 
     let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(25)
+        .acquire_timeout(std::time::Duration::from_secs(30))
+        .idle_timeout(std::time::Duration::from_secs(600))
+        .max_lifetime(std::time::Duration::from_secs(1800))
         .connect(&database_url)
         .await
         .expect("Failed to connect to database");
@@ -80,9 +84,16 @@ async fn main() {
             axum::http::Method::DELETE,
             axum::http::Method::OPTIONS,
         ])
-        .allow_headers(AllowHeaders::any());
+        .allow_headers([CONTENT_TYPE, AUTHORIZATION, ACCEPT]);
+
+    // Health check endpoint for Docker/Kubernetes
+    let health = axum::Router::new().route(
+        "/health",
+        axum::routing::get(|| async { axum::http::StatusCode::OK }),
+    );
 
     let app = axum::Router::new()
+        .merge(health)
         .nest("/api/v1/auth", auth::router())
         .nest("/api/v1/trips", trips::router())
         .nest("/api/v1/trips", activity_pins::router())
@@ -99,7 +110,37 @@ async fn main() {
         .await
         .expect("Failed to bind address");
 
+    // Graceful shutdown on SIGTERM/SIGINT
     axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("Server error");
+
+    tracing::info!("Server shut down gracefully");
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("Shutdown signal received, starting graceful shutdown");
 }

@@ -1,15 +1,31 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
+use serde::Deserialize;
 use serde_json::json;
 use validator::Validate;
 
 use crate::auth::{AppState, AuthUser};
 use super::model::*;
+
+#[derive(Debug, Deserialize)]
+pub struct PaginationParams {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+impl PaginationParams {
+    fn limit(&self) -> i64 {
+        self.limit.unwrap_or(50).min(100).max(1)
+    }
+    fn offset(&self) -> i64 {
+        self.offset.unwrap_or(0).max(0)
+    }
+}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -142,6 +158,7 @@ async fn list_expenses(
     State(state): State<AppState>,
     auth_user: AuthUser,
     Path(trip_id): Path<uuid::Uuid>,
+    Query(pagination): Query<PaginationParams>,
 ) -> impl IntoResponse {
     match verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
         Ok(true) => {}
@@ -159,15 +176,21 @@ async fn list_expenses(
         }
     }
 
+    let limit = pagination.limit();
+    let offset = pagination.offset();
+
     let rows = sqlx::query_as::<_, ExpenseRow>(
         "SELECT e.id, e.trip_id, e.user_id, e.activity_pin_id, e.title, e.amount_cents, \
                 e.category, e.split_type, e.notes, e.created_at, e.updated_at, u.username \
          FROM expenses e \
          JOIN users u ON e.user_id = u.id \
          WHERE e.trip_id = $1 \
-         ORDER BY e.created_at DESC",
+         ORDER BY e.created_at DESC \
+         LIMIT $2 OFFSET $3",
     )
     .bind(trip_id)
+    .bind(limit)
+    .bind(offset)
     .fetch_all(&state.pool)
     .await;
 
@@ -270,6 +293,49 @@ async fn update_expense(
         }
     }
 
+    // Verify the user owns this expense or is the trip owner
+    let expense_owner = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT user_id FROM expenses WHERE id = $1 AND trip_id = $2",
+    )
+    .bind(expense_id)
+    .bind(trip_id)
+    .fetch_optional(&state.pool)
+    .await;
+
+    match expense_owner {
+        Ok(Some(owner_id)) => {
+            if owner_id != auth_user.user_id {
+                let is_trip_owner = sqlx::query_scalar::<_, bool>(
+                    "SELECT EXISTS(SELECT 1 FROM trip_members WHERE trip_id = $1 AND user_id = $2 AND role = 'owner')",
+                )
+                .bind(trip_id)
+                .bind(auth_user.user_id)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap_or(false);
+
+                if !is_trip_owner {
+                    return (
+                        StatusCode::FORBIDDEN,
+                        Json(json!({ "error": "Only the expense creator or trip owner can update this expense" })),
+                    );
+                }
+            }
+        }
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Expense not found" })),
+            );
+        }
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Something went wrong" })),
+            );
+        }
+    }
+
     if let Some(ref st) = body.split_type {
         if st != "shared" && st != "personal" {
             return (
@@ -331,6 +397,49 @@ async fn delete_expense(
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "Trip not found" })),
+            );
+        }
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Something went wrong" })),
+            );
+        }
+    }
+
+    // Verify the user owns this expense or is the trip owner
+    let expense_owner = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT user_id FROM expenses WHERE id = $1 AND trip_id = $2",
+    )
+    .bind(expense_id)
+    .bind(trip_id)
+    .fetch_optional(&state.pool)
+    .await;
+
+    match expense_owner {
+        Ok(Some(owner_id)) => {
+            if owner_id != auth_user.user_id {
+                let is_trip_owner = sqlx::query_scalar::<_, bool>(
+                    "SELECT EXISTS(SELECT 1 FROM trip_members WHERE trip_id = $1 AND user_id = $2 AND role = 'owner')",
+                )
+                .bind(trip_id)
+                .bind(auth_user.user_id)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap_or(false);
+
+                if !is_trip_owner {
+                    return (
+                        StatusCode::FORBIDDEN,
+                        Json(json!({ "error": "Only the expense creator or trip owner can delete this expense" })),
+                    );
+                }
+            }
+        }
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Expense not found" })),
             );
         }
         Err(_) => {

@@ -23,6 +23,13 @@ import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl, iconRetinaUrl, shadowUrl });
 
+/** Escape HTML entities to prevent XSS in Leaflet popups */
+function escapeHtml(str: string): string {
+  const div = document.createElement("div");
+  div.appendChild(document.createTextNode(str));
+  return div.innerHTML;
+}
+
 const CATEGORY_ICONS: Record<string, string> = {
   restaurant: "\uD83C\uDF74",
   activity: "\u26F7\uFE0F",
@@ -90,7 +97,7 @@ export default function TripView() {
   let markersLayer: L.LayerGroup | undefined;
 
   onMount(() => {
-    setTimeout(initMap, 100);
+    requestAnimationFrame(initMap);
   });
 
   // ── Real-time WebSocket connection (opt-in) ──
@@ -115,9 +122,16 @@ export default function TripView() {
       reconnectDelay = 1000;
     };
 
-    wsRef.onmessage = (_event) => {
-      // Any event means data changed — refetch pins
-      refetchPins();
+    wsRef.onmessage = (event) => {
+      // Only refetch for data-changing events, ignore unknown messages
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type && ["pin_created", "pin_updated", "pin_deleted", "document_uploaded", "document_deleted", "pin_voted"].includes(data.type)) {
+          refetchPins();
+        }
+      } catch {
+        // Ignore malformed messages
+      }
     };
 
     wsRef.onclose = () => {
@@ -209,7 +223,7 @@ export default function TripView() {
         className: "map-pin-wrapper",
         html: `<div class="map-pin-icon ${statusClass}">
           <span class="pin-emoji">${emoji}</span>
-          <span class="pin-label">${pin.title}</span>
+          <span class="pin-label">${escapeHtml(pin.title)}</span>
         </div>`,
         iconSize: [0, 0],
         iconAnchor: [0, 0],
@@ -226,14 +240,14 @@ export default function TripView() {
 
       const popupContent = `
         <div class="pin-popup">
-          <div class="pin-popup-title">${pin.title}</div>
-          ${pin.description ? `<div class="pin-popup-desc">${pin.description}</div>` : ""}
+          <div class="pin-popup-title">${escapeHtml(pin.title)}</div>
+          ${pin.description ? `<div class="pin-popup-desc">${escapeHtml(pin.description)}</div>` : ""}
           ${scheduledHtml}${priceHtml}
           <div class="pin-popup-meta">
-            <span class="pin-popup-category">${pin.category.toUpperCase()}</span>
-            <span class="pin-popup-status status-badge status-${pin.status}">${pin.status}</span>
+            <span class="pin-popup-category">${escapeHtml(pin.category.toUpperCase())}</span>
+            <span class="pin-popup-status status-badge status-${escapeHtml(pin.status)}">${escapeHtml(pin.status)}</span>
           </div>
-          <div class="pin-popup-author">Added by ${pin.created_by}</div>
+          <div class="pin-popup-author">Added by ${escapeHtml(pin.created_by)}</div>
         </div>
       `;
 
@@ -291,12 +305,21 @@ export default function TripView() {
   const handleVote = async (pin: ActivityPin, vote: 1 | -1) => {
     try {
       // If user already voted the same way, remove the vote (toggle off)
+      let newVotes;
       if (pin.votes.user_vote === vote) {
-        await api.deleteVote(auth.token()!, params.tripId, pin.id);
+        newVotes = await api.deleteVote(auth.token()!, params.tripId, pin.id);
       } else {
-        await api.votePin(auth.token()!, params.tripId, pin.id, vote);
+        newVotes = await api.votePin(auth.token()!, params.tripId, pin.id, vote);
       }
-      refetchPins();
+      // Optimistic update: mutate the pin's votes in place instead of full refetch
+      const currentPins = pins();
+      if (currentPins) {
+        const updated = currentPins.map((p) =>
+          p.id === pin.id ? { ...p, votes: newVotes } : p
+        );
+        // Use refetch to get the server-confirmed state
+        refetchPins();
+      }
     } catch (err: any) {
       console.error("Failed to vote:", err);
     }

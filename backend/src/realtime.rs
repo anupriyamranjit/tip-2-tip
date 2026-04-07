@@ -5,7 +5,7 @@ use tokio::sync::{broadcast, RwLock};
 use serde::{Deserialize, Serialize};
 
 /// Maximum number of buffered messages per trip channel
-const CHANNEL_CAPACITY: usize = 64;
+const CHANNEL_CAPACITY: usize = 256;
 
 /// Maximum total concurrent WebSocket connections
 const MAX_GLOBAL_CONNECTIONS: usize = 5000;
@@ -123,7 +123,7 @@ impl TripBroadcaster {
     pub fn start_cleanup_task(self) {
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                 self.cleanup_empty_channels().await;
             }
         });

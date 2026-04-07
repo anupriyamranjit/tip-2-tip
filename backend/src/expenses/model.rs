@@ -5,7 +5,7 @@ use validator::Validate;
 pub struct CreateExpenseRequest {
     #[validate(length(min = 1, max = 255, message = "Expense title is required"))]
     pub title: String,
-    #[validate(range(min = 0, message = "Amount must be non-negative"))]
+    #[validate(range(min = 0, max = 999_999_999, message = "Amount must be between 0 and 999999999"))]
     pub amount_cents: i32,
     pub category: Option<String>,
     pub split_type: Option<String>,
@@ -17,7 +17,7 @@ pub struct CreateExpenseRequest {
 pub struct UpdateExpenseRequest {
     #[validate(length(min = 1, max = 255, message = "Expense title cannot be empty"))]
     pub title: Option<String>,
-    #[validate(range(min = 0, message = "Amount must be non-negative"))]
+    #[validate(range(min = 0, max = 999_999_999, message = "Amount must be between 0 and 999999999"))]
     pub amount_cents: Option<i32>,
     pub category: Option<String>,
     pub split_type: Option<String>,

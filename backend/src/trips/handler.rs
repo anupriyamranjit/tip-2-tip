@@ -1,15 +1,31 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
+use serde::Deserialize;
 use serde_json::json;
 use validator::Validate;
 
 use crate::auth::{AppState, AuthUser};
 use super::model::*;
+
+#[derive(Debug, Deserialize)]
+pub struct PaginationParams {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+impl PaginationParams {
+    fn limit(&self) -> i64 {
+        self.limit.unwrap_or(50).min(100).max(1)
+    }
+    fn offset(&self) -> i64 {
+        self.offset.unwrap_or(0).max(0)
+    }
+}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -113,7 +129,11 @@ async fn create_trip(
 async fn list_my_trips(
     State(state): State<AppState>,
     auth_user: AuthUser,
+    Query(pagination): Query<PaginationParams>,
 ) -> impl IntoResponse {
+    let limit = pagination.limit();
+    let offset = pagination.offset();
+
     let trips = sqlx::query_as::<_, TripWithMemberInfo>(
         "SELECT t.id, t.name, t.description, t.destination, t.start_date, t.end_date, \
                 t.status, t.cover_image_url, t.created_at, \
@@ -122,9 +142,12 @@ async fn list_my_trips(
          FROM trips t \
          JOIN trip_members tm ON t.id = tm.trip_id \
          WHERE tm.user_id = $1 \
-         ORDER BY t.created_at DESC",
+         ORDER BY t.created_at DESC \
+         LIMIT $2 OFFSET $3",
     )
     .bind(&auth_user.user_id)
+    .bind(limit)
+    .bind(offset)
     .fetch_all(&state.pool)
     .await;
 

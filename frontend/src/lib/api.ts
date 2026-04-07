@@ -96,8 +96,15 @@ export function login(payload: LoginPayload): Promise<AuthResponse> {
   });
 }
 
-export function getMyTrips(token: string): Promise<{ trips: Trip[] }> {
-  return authRequest("/trips", token);
+export function getMyTrips(
+  token: string,
+  opts?: { limit?: number; offset?: number }
+): Promise<{ trips: Trip[] }> {
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  if (opts?.offset) params.set("offset", String(opts.offset));
+  const qs = params.toString();
+  return authRequest(`/trips${qs ? `?${qs}` : ""}`, token);
 }
 
 export function getTrip(token: string, id: string): Promise<Trip> {
@@ -177,9 +184,14 @@ export interface UpdatePinPayload {
 
 export function listPins(
   token: string,
-  tripId: string
+  tripId: string,
+  opts?: { limit?: number; offset?: number }
 ): Promise<{ pins: ActivityPin[] }> {
-  return authRequest(`/trips/${tripId}/pins`, token);
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  if (opts?.offset) params.set("offset", String(opts.offset));
+  const qs = params.toString();
+  return authRequest(`/trips/${tripId}/pins${qs ? `?${qs}` : ""}`, token);
 }
 
 export function createPin(
@@ -316,9 +328,14 @@ export interface UpdateExpensePayload {
 
 export function listExpenses(
   token: string,
-  tripId: string
+  tripId: string,
+  opts?: { limit?: number; offset?: number }
 ): Promise<{ expenses: Expense[] }> {
-  return authRequest(`/trips/${tripId}/expenses`, token);
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  if (opts?.offset) params.set("offset", String(opts.offset));
+  const qs = params.toString();
+  return authRequest(`/trips/${tripId}/expenses${qs ? `?${qs}` : ""}`, token);
 }
 
 export function createExpense(
