@@ -1,5 +1,6 @@
 mod activity_pins;
 mod auth;
+pub mod common;
 mod expenses;
 pub mod realtime;
 mod trips;
@@ -62,11 +63,14 @@ async fn main() {
     // Start background task to periodically clean up empty broadcast channels
     broadcaster.clone().start_cleanup_task();
 
+    let user_cache = common::UserExistsCache::new(300); // 5-minute TTL
+
     let state = AppState {
         pool,
         jwt_secret,
         upload_dir,
         broadcaster,
+        user_cache,
     };
 
     let cors_origin = std::env::var("CORS_ORIGIN")

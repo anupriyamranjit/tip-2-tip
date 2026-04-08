@@ -5,29 +5,14 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
 use validator::Validate;
 
 use crate::auth::{AppState, AuthUser};
+use crate::common::PaginationParams;
 use crate::realtime::TripEvent;
 use super::model::*;
-
-#[derive(Debug, Deserialize)]
-pub struct PaginationParams {
-    pub limit: Option<i64>,
-    pub offset: Option<i64>,
-}
-
-impl PaginationParams {
-    fn limit(&self) -> i64 {
-        self.limit.unwrap_or(50).min(100).max(1)
-    }
-    fn offset(&self) -> i64 {
-        self.offset.unwrap_or(0).max(0)
-    }
-}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -39,56 +24,7 @@ pub fn router() -> Router<AppState> {
         .route("/{trip_id}/ws", get(super::ws::ws_handler))
 }
 
-/// Verifies the user is a member of the given trip. Returns 404 if not.
-async fn verify_trip_member(
-    pool: &sqlx::PgPool,
-    trip_id: uuid::Uuid,
-    user_id: uuid::Uuid,
-) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
-    let exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM trip_members WHERE trip_id = $1 AND user_id = $2)",
-    )
-    .bind(trip_id)
-    .bind(user_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": "Something went wrong" })),
-        )
-    })?;
-
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Trip not found" })),
-        ));
-    }
-    Ok(())
-}
-
-/// Checks if the user is the pin creator or the trip owner.
-async fn can_modify_pin(
-    pool: &sqlx::PgPool,
-    pin_user_id: uuid::Uuid,
-    trip_id: uuid::Uuid,
-    requesting_user_id: uuid::Uuid,
-) -> Result<bool, ()> {
-    if pin_user_id == requesting_user_id {
-        return Ok(true);
-    }
-    let is_owner = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM trip_members WHERE trip_id = $1 AND user_id = $2 AND role = 'owner')",
-    )
-    .bind(trip_id)
-    .bind(requesting_user_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|_| ())?;
-
-    Ok(is_owner)
-}
+use crate::common::{verify_trip_member, can_modify_resource};
 
 /// Fetches documents for a list of pin IDs, grouped by pin_id.
 async fn fetch_documents_for_pins(
@@ -167,18 +103,7 @@ async fn create_pin(
     Json(body): Json<CreatePinRequest>,
 ) -> impl IntoResponse {
     if let Err(errors) = body.validate() {
-        let messages: Vec<String> = errors
-            .field_errors()
-            .into_values()
-            .flat_map(|errs| {
-                errs.iter()
-                    .filter_map(|e| e.message.as_ref().map(|m| m.to_string()))
-            })
-            .collect();
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": messages.join(", ") })),
-        );
+        return crate::common::validation_error(errors);
     }
 
     if let Err(resp) = verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
@@ -285,8 +210,10 @@ async fn list_pins(
             let pin_ids: Vec<uuid::Uuid> = rows.iter().map(|r| r.id).collect();
             let trip_id_str = trip_id.to_string();
 
-            let docs_result = fetch_documents_for_pins(&state.pool, &pin_ids, &trip_id_str).await;
-            let votes_result = fetch_votes_for_pins(&state.pool, &pin_ids, auth_user.user_id).await;
+            let (docs_result, votes_result) = tokio::join!(
+                fetch_documents_for_pins(&state.pool, &pin_ids, &trip_id_str),
+                fetch_votes_for_pins(&state.pool, &pin_ids, auth_user.user_id)
+            );
 
             match (docs_result, votes_result) {
                 (Ok(mut docs), Ok(mut votes)) => {
@@ -335,8 +262,11 @@ async fn get_pin(
     match pin {
         Ok(Some(row)) => {
             let trip_id_str = trip_id.to_string();
-            let docs = fetch_documents_for_pins(&state.pool, &[pin_id], &trip_id_str).await;
-            let votes = fetch_votes_for_pins(&state.pool, &[pin_id], auth_user.user_id).await;
+            let pin_ids = [pin_id];
+            let (docs, votes) = tokio::join!(
+                fetch_documents_for_pins(&state.pool, &pin_ids, &trip_id_str),
+                fetch_votes_for_pins(&state.pool, &pin_ids, auth_user.user_id)
+            );
             match (docs, votes) {
                 (Ok(mut doc_map), Ok(mut vote_map)) => {
                     let pin_docs = doc_map.remove(&pin_id).unwrap_or_default();
@@ -367,18 +297,7 @@ async fn update_pin(
     Json(body): Json<UpdatePinRequest>,
 ) -> impl IntoResponse {
     if let Err(errors) = body.validate() {
-        let messages: Vec<String> = errors
-            .field_errors()
-            .into_values()
-            .flat_map(|errs| {
-                errs.iter()
-                    .filter_map(|e| e.message.as_ref().map(|m| m.to_string()))
-            })
-            .collect();
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": messages.join(", ") })),
-        );
+        return crate::common::validation_error(errors);
     }
 
     if let Err(resp) = verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
@@ -410,7 +329,7 @@ async fn update_pin(
         }
     };
 
-    let can_modify = can_modify_pin(&state.pool, pin_owner_id, trip_id, auth_user.user_id).await;
+    let can_modify = can_modify_resource(&state.pool, pin_owner_id, trip_id, auth_user.user_id).await;
     match can_modify {
         Ok(true) => {}
         Ok(false) => {
@@ -650,7 +569,7 @@ async fn delete_pin(
         }
     };
 
-    let can_modify = can_modify_pin(&state.pool, pin_owner_id, trip_id, auth_user.user_id).await;
+    let can_modify = can_modify_resource(&state.pool, pin_owner_id, trip_id, auth_user.user_id).await;
     match can_modify {
         Ok(true) => {}
         Ok(false) => {
@@ -1014,7 +933,7 @@ async fn delete_document(
     match doc {
         Ok(Some(row)) => {
             // Check if user uploaded it or is trip owner
-            let can = can_modify_pin(&state.pool, row.uploaded_by, trip_id, auth_user.user_id).await;
+            let can = can_modify_resource(&state.pool, row.uploaded_by, trip_id, auth_user.user_id).await;
             match can {
                 Ok(true) => {}
                 Ok(false) => {
@@ -1089,6 +1008,7 @@ mod tests {
             jwt_secret: "a]super-secret-key-that-is-at-least-32-chars!!".to_string(),
             upload_dir,
             broadcaster: crate::realtime::TripBroadcaster::new(),
+            user_cache: crate::common::UserExistsCache::new(300),
         };
         Router::new()
             .nest("/api/v1/auth", crate::auth::router())

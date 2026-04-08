@@ -5,27 +5,12 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::Deserialize;
 use serde_json::json;
 use validator::Validate;
 
 use crate::auth::{AppState, AuthUser};
+use crate::common::{PaginationParams, verify_trip_member, verify_resource_ownership};
 use super::model::*;
-
-#[derive(Debug, Deserialize)]
-pub struct PaginationParams {
-    pub limit: Option<i64>,
-    pub offset: Option<i64>,
-}
-
-impl PaginationParams {
-    fn limit(&self) -> i64 {
-        self.limit.unwrap_or(50).min(100).max(1)
-    }
-    fn offset(&self) -> i64 {
-        self.offset.unwrap_or(0).max(0)
-    }
-}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -39,22 +24,6 @@ pub fn router() -> Router<AppState> {
         )
 }
 
-/// Verify the user is a member of the trip. Returns true if authorized.
-async fn verify_trip_member(
-    pool: &sqlx::PgPool,
-    trip_id: uuid::Uuid,
-    user_id: uuid::Uuid,
-) -> Result<bool, ()> {
-    sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM trip_members WHERE trip_id = $1 AND user_id = $2)",
-    )
-    .bind(trip_id)
-    .bind(user_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|_| ())
-}
-
 async fn create_expense(
     State(state): State<AppState>,
     auth_user: AuthUser,
@@ -62,34 +31,11 @@ async fn create_expense(
     Json(body): Json<CreateExpenseRequest>,
 ) -> impl IntoResponse {
     if let Err(errors) = body.validate() {
-        let messages: Vec<String> = errors
-            .field_errors()
-            .into_values()
-            .flat_map(|errs| {
-                errs.iter()
-                    .filter_map(|e| e.message.as_ref().map(|m| m.to_string()))
-            })
-            .collect();
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": messages.join(", ") })),
-        );
+        return crate::common::validation_error(errors);
     }
 
-    match verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
-        Ok(true) => {}
-        Ok(false) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Trip not found" })),
-            );
-        }
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Something went wrong" })),
-            );
-        }
+    if let Err(resp) = verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
+        return resp;
     }
 
     let split_type = body.split_type.as_deref().unwrap_or("shared");
@@ -160,20 +106,8 @@ async fn list_expenses(
     Path(trip_id): Path<uuid::Uuid>,
     Query(pagination): Query<PaginationParams>,
 ) -> impl IntoResponse {
-    match verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
-        Ok(true) => {}
-        Ok(false) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Trip not found" })),
-            );
-        }
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Something went wrong" })),
-            );
-        }
+    if let Err(resp) = verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
+        return resp;
     }
 
     let limit = pagination.limit();
@@ -212,20 +146,8 @@ async fn get_expense(
     auth_user: AuthUser,
     Path((trip_id, expense_id)): Path<(uuid::Uuid, uuid::Uuid)>,
 ) -> impl IntoResponse {
-    match verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
-        Ok(true) => {}
-        Ok(false) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Trip not found" })),
-            );
-        }
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Something went wrong" })),
-            );
-        }
+    if let Err(resp) = verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
+        return resp;
     }
 
     let result = sqlx::query_as::<_, ExpenseRow>(
@@ -263,77 +185,14 @@ async fn update_expense(
     Json(body): Json<UpdateExpenseRequest>,
 ) -> impl IntoResponse {
     if let Err(errors) = body.validate() {
-        let messages: Vec<String> = errors
-            .field_errors()
-            .into_values()
-            .flat_map(|errs| {
-                errs.iter()
-                    .filter_map(|e| e.message.as_ref().map(|m| m.to_string()))
-            })
-            .collect();
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": messages.join(", ") })),
-        );
+        return crate::common::validation_error(errors);
     }
 
-    match verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
-        Ok(true) => {}
-        Ok(false) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Trip not found" })),
-            );
-        }
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Something went wrong" })),
-            );
-        }
-    }
-
-    // Verify the user owns this expense or is the trip owner
-    let expense_owner = sqlx::query_scalar::<_, uuid::Uuid>(
-        "SELECT user_id FROM expenses WHERE id = $1 AND trip_id = $2",
-    )
-    .bind(expense_id)
-    .bind(trip_id)
-    .fetch_optional(&state.pool)
-    .await;
-
-    match expense_owner {
-        Ok(Some(owner_id)) => {
-            if owner_id != auth_user.user_id {
-                let is_trip_owner = sqlx::query_scalar::<_, bool>(
-                    "SELECT EXISTS(SELECT 1 FROM trip_members WHERE trip_id = $1 AND user_id = $2 AND role = 'owner')",
-                )
-                .bind(trip_id)
-                .bind(auth_user.user_id)
-                .fetch_one(&state.pool)
-                .await
-                .unwrap_or(false);
-
-                if !is_trip_owner {
-                    return (
-                        StatusCode::FORBIDDEN,
-                        Json(json!({ "error": "Only the expense creator or trip owner can update this expense" })),
-                    );
-                }
-            }
-        }
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Expense not found" })),
-            );
-        }
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Something went wrong" })),
-            );
-        }
+    // Single query: verify trip membership + expense ownership + trip owner role
+    if let Err(resp) = verify_resource_ownership(
+        &state.pool, "expenses", expense_id, trip_id, auth_user.user_id, "expense",
+    ).await {
+        return resp;
     }
 
     if let Some(ref st) = body.split_type {
@@ -391,63 +250,11 @@ async fn delete_expense(
     auth_user: AuthUser,
     Path((trip_id, expense_id)): Path<(uuid::Uuid, uuid::Uuid)>,
 ) -> impl IntoResponse {
-    match verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
-        Ok(true) => {}
-        Ok(false) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Trip not found" })),
-            );
-        }
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Something went wrong" })),
-            );
-        }
-    }
-
-    // Verify the user owns this expense or is the trip owner
-    let expense_owner = sqlx::query_scalar::<_, uuid::Uuid>(
-        "SELECT user_id FROM expenses WHERE id = $1 AND trip_id = $2",
-    )
-    .bind(expense_id)
-    .bind(trip_id)
-    .fetch_optional(&state.pool)
-    .await;
-
-    match expense_owner {
-        Ok(Some(owner_id)) => {
-            if owner_id != auth_user.user_id {
-                let is_trip_owner = sqlx::query_scalar::<_, bool>(
-                    "SELECT EXISTS(SELECT 1 FROM trip_members WHERE trip_id = $1 AND user_id = $2 AND role = 'owner')",
-                )
-                .bind(trip_id)
-                .bind(auth_user.user_id)
-                .fetch_one(&state.pool)
-                .await
-                .unwrap_or(false);
-
-                if !is_trip_owner {
-                    return (
-                        StatusCode::FORBIDDEN,
-                        Json(json!({ "error": "Only the expense creator or trip owner can delete this expense" })),
-                    );
-                }
-            }
-        }
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Expense not found" })),
-            );
-        }
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Something went wrong" })),
-            );
-        }
+    // Single query: verify expense ownership + trip owner role
+    if let Err(resp) = verify_resource_ownership(
+        &state.pool, "expenses", expense_id, trip_id, auth_user.user_id, "expense",
+    ).await {
+        return resp;
     }
 
     let result = sqlx::query(
@@ -481,20 +288,8 @@ async fn sync_confirmed_pins(
     auth_user: AuthUser,
     Path(trip_id): Path<uuid::Uuid>,
 ) -> impl IntoResponse {
-    match verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
-        Ok(true) => {}
-        Ok(false) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Trip not found" })),
-            );
-        }
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Something went wrong" })),
-            );
-        }
+    if let Err(resp) = verify_trip_member(&state.pool, trip_id, auth_user.user_id).await {
+        return resp;
     }
 
     // Insert expenses for confirmed pins with prices that don't already have an expense entry
@@ -570,6 +365,7 @@ mod tests {
                 .to_string_lossy()
                 .to_string(),
             broadcaster: crate::realtime::TripBroadcaster::new(),
+            user_cache: crate::common::UserExistsCache::new(300),
         };
         Router::new()
             .nest("/api/v1/auth", crate::auth::router())

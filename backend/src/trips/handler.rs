@@ -5,27 +5,12 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::Deserialize;
 use serde_json::json;
 use validator::Validate;
 
 use crate::auth::{AppState, AuthUser};
+use crate::common::PaginationParams;
 use super::model::*;
-
-#[derive(Debug, Deserialize)]
-pub struct PaginationParams {
-    pub limit: Option<i64>,
-    pub offset: Option<i64>,
-}
-
-impl PaginationParams {
-    fn limit(&self) -> i64 {
-        self.limit.unwrap_or(50).min(100).max(1)
-    }
-    fn offset(&self) -> i64 {
-        self.offset.unwrap_or(0).max(0)
-    }
-}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -39,18 +24,7 @@ async fn create_trip(
     Json(body): Json<CreateTripRequest>,
 ) -> impl IntoResponse {
     if let Err(errors) = body.validate() {
-        let messages: Vec<String> = errors
-            .field_errors()
-            .into_values()
-            .flat_map(|errs| {
-                errs.iter()
-                    .filter_map(|e| e.message.as_ref().map(|m| m.to_string()))
-            })
-            .collect();
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": messages.join(", ") })),
-        );
+        return crate::common::validation_error(errors);
     }
 
     let mut tx = match state.pool.begin().await {
@@ -208,6 +182,7 @@ mod tests {
             jwt_secret: "a]super-secret-key-that-is-at-least-32-chars!!".to_string(),
             upload_dir: std::env::temp_dir().join("tip2tip_test_uploads").to_string_lossy().to_string(),
             broadcaster: crate::realtime::TripBroadcaster::new(),
+            user_cache: crate::common::UserExistsCache::new(300),
         };
         Router::new()
             .nest("/api/v1/auth", crate::auth::router())

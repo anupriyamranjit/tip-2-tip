@@ -52,20 +52,18 @@ impl FromRequestParts<AppState> for AuthUser {
                 .into_response()
         })?;
 
-        // Verify the user still exists in the database to prevent stale tokens
-        let user_exists = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)",
-        )
-        .bind(user_id)
-        .fetch_one(&state.pool)
-        .await
-        .map_err(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "Something went wrong"})),
-            )
-                .into_response()
-        })?;
+        // Verify the user still exists, using a TTL cache to avoid hitting DB every request
+        let user_exists = state
+            .user_cache
+            .user_exists(&state.pool, user_id)
+            .await
+            .map_err(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "Something went wrong"})),
+                )
+                    .into_response()
+            })?;
 
         if !user_exists {
             return Err((

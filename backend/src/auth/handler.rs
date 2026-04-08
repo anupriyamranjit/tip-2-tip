@@ -17,6 +17,7 @@ pub struct AppState {
     pub jwt_secret: String,
     pub upload_dir: String,
     pub broadcaster: crate::realtime::TripBroadcaster,
+    pub user_cache: crate::common::UserExistsCache,
 }
 
 pub fn router() -> Router<AppState> {
@@ -30,17 +31,7 @@ async fn signup(
     Json(body): Json<SignupRequest>,
 ) -> impl IntoResponse {
     if let Err(errors) = body.validate() {
-        let messages: Vec<String> = errors
-            .field_errors()
-            .into_values()
-            .flat_map(|errs| {
-                errs.iter().filter_map(|e| e.message.as_ref().map(|m| m.to_string()))
-            })
-            .collect();
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": messages.join(", ") })),
-        );
+        return crate::common::validation_error(errors);
     }
 
     // Check if email already exists
@@ -140,17 +131,7 @@ async fn login(
     Json(body): Json<LoginRequest>,
 ) -> impl IntoResponse {
     if let Err(errors) = body.validate() {
-        let messages: Vec<String> = errors
-            .field_errors()
-            .into_values()
-            .flat_map(|errs| {
-                errs.iter().filter_map(|e| e.message.as_ref().map(|m| m.to_string()))
-            })
-            .collect();
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": messages.join(", ") })),
-        );
+        return crate::common::validation_error(errors);
     }
 
     // Find user by email
@@ -239,6 +220,7 @@ mod tests {
             jwt_secret: "a]super-secret-key-that-is-at-least-32-chars!!".to_string(),
             upload_dir: std::env::temp_dir().join("tip2tip_test_uploads").to_string_lossy().to_string(),
             broadcaster: crate::realtime::TripBroadcaster::new(),
+            user_cache: crate::common::UserExistsCache::new(300),
         };
         Router::new()
             .nest("/api/v1/auth", router())
