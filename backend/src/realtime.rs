@@ -109,11 +109,34 @@ impl TripBroadcaster {
     }
 
     /// Clean up channels with no active subscribers to prevent memory leaks.
+    /// Uses a two-phase approach: identify dead channels under read lock, then remove under write lock.
     pub async fn cleanup_empty_channels(&self) {
+        // Phase 1: identify dead channels under read lock (non-blocking for subscribers)
+        let dead_ids: Vec<uuid::Uuid> = {
+            let channels = self.channels.read().await;
+            channels
+                .iter()
+                .filter(|(_, tx)| tx.receiver_count() == 0)
+                .map(|(id, _)| *id)
+                .collect()
+        };
+
+        if dead_ids.is_empty() {
+            return;
+        }
+
+        // Phase 2: remove under write lock (short critical section)
         let mut channels = self.channels.write().await;
-        let before = channels.len();
-        channels.retain(|_, tx| tx.receiver_count() > 0);
-        let removed = before - channels.len();
+        let mut removed = 0usize;
+        for id in &dead_ids {
+            // Re-check: a subscriber may have joined between phases
+            if let Some(tx) = channels.get(id) {
+                if tx.receiver_count() == 0 {
+                    channels.remove(id);
+                    removed += 1;
+                }
+            }
+        }
         if removed > 0 {
             tracing::debug!("Cleaned up {} empty broadcast channels", removed);
         }

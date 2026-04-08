@@ -854,18 +854,19 @@ async fn download_document(
         return resp.into_response();
     }
 
-    let doc = sqlx::query_as::<_, PinDocumentRow>(
-        "SELECT * FROM pin_documents WHERE id = $1",
+    // Only fetch the columns we need for download (not all fields)
+    let doc = sqlx::query_as::<_, (String, String, String)>(
+        "SELECT original_filename, stored_filename, mime_type FROM pin_documents WHERE id = $1",
     )
     .bind(doc_id)
     .fetch_optional(&state.pool)
     .await;
 
     match doc {
-        Ok(Some(row)) => {
+        Ok(Some((original_filename, stored_filename, mime_type))) => {
             // Prevent path traversal by ensuring stored_filename has no directory separators
-            if row.stored_filename.contains('/') || row.stored_filename.contains('\\') || row.stored_filename.contains("..") {
-                tracing::warn!("Suspicious stored_filename detected: {}", row.stored_filename);
+            if stored_filename.contains('/') || stored_filename.contains('\\') || stored_filename.contains("..") {
+                tracing::warn!("Suspicious stored_filename detected: {}", stored_filename);
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({ "error": "Something went wrong" })),
@@ -873,23 +874,26 @@ async fn download_document(
                     .into_response();
             }
 
-            let file_path = std::path::Path::new(&state.upload_dir).join(&row.stored_filename);
-            match tokio::fs::read(&file_path).await {
-                Ok(data) => {
+            let file_path = std::path::Path::new(&state.upload_dir).join(&stored_filename);
+            match tokio::fs::File::open(&file_path).await {
+                Ok(file) => {
                     let content_disposition = format!(
                         "attachment; filename=\"{}\"",
-                        row.original_filename.replace('"', "\\\"")
+                        original_filename.replace('"', "\\\"")
                     );
+                    // Stream file instead of loading entirely into memory
+                    let stream = tokio_util::io::ReaderStream::new(file);
+                    let body = axum::body::Body::from_stream(stream);
                     (
                         StatusCode::OK,
                         [
-                            (axum::http::header::CONTENT_TYPE, row.mime_type),
+                            (axum::http::header::CONTENT_TYPE, mime_type),
                             (
                                 axum::http::header::CONTENT_DISPOSITION,
                                 content_disposition,
                             ),
                         ],
-                        data,
+                        body,
                     )
                         .into_response()
                 }
@@ -923,17 +927,18 @@ async fn delete_document(
         return resp;
     }
 
-    let doc = sqlx::query_as::<_, PinDocumentRow>(
-        "SELECT * FROM pin_documents WHERE id = $1",
+    // Only fetch the columns we need for auth check and file cleanup
+    let doc = sqlx::query_as::<_, (uuid::Uuid, String)>(
+        "SELECT uploaded_by, stored_filename FROM pin_documents WHERE id = $1",
     )
     .bind(doc_id)
     .fetch_optional(&state.pool)
     .await;
 
     match doc {
-        Ok(Some(row)) => {
+        Ok(Some((uploaded_by, stored_filename))) => {
             // Check if user uploaded it or is trip owner
-            let can = can_modify_resource(&state.pool, row.uploaded_by, trip_id, auth_user.user_id).await;
+            let can = can_modify_resource(&state.pool, uploaded_by, trip_id, auth_user.user_id).await;
             match can {
                 Ok(true) => {}
                 Ok(false) => {
@@ -951,7 +956,7 @@ async fn delete_document(
             }
 
             // Delete from disk
-            let file_path = std::path::Path::new(&state.upload_dir).join(&row.stored_filename);
+            let file_path = std::path::Path::new(&state.upload_dir).join(&stored_filename);
             let _ = tokio::fs::remove_file(file_path).await;
 
             // Delete from database
