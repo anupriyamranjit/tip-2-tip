@@ -1,5 +1,11 @@
 const BASE = "/api/v1";
 
+function handleSessionExpiry(): void {
+  sessionStorage.removeItem("token");
+  sessionStorage.removeItem("user");
+  window.location.href = "/login";
+}
+
 interface SignupPayload {
   email: string;
   username: string;
@@ -51,15 +57,12 @@ async function request<T>(path: string, options: RequestInit): Promise<T> {
     },
   });
 
-  const data = await res.json();
-
   if (res.status === 401) {
-    // Token is invalid or user no longer exists — clear session and redirect
-    sessionStorage.removeItem("token");
-    sessionStorage.removeItem("user");
-    window.location.href = "/login";
+    handleSessionExpiry();
     throw new Error("Session expired. Please log in again.");
   }
+
+  const data = await res.json();
 
   if (!res.ok) {
     throw new Error(data.error || "Something went wrong");
@@ -247,9 +250,7 @@ export async function uploadDocument(
   });
 
   if (res.status === 401) {
-    sessionStorage.removeItem("token");
-    sessionStorage.removeItem("user");
-    window.location.href = "/login";
+    handleSessionExpiry();
     throw new Error("Session expired. Please log in again.");
   }
 

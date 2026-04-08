@@ -11,6 +11,7 @@ import {
 import { useAuth } from "../lib/auth";
 import * as api from "../lib/api";
 import type { ActivityPin, PinDocument } from "../lib/api";
+import { CATEGORY_ICONS, formatPrice, formatDate, escapeHtml } from "../lib/constants";
 import Budget from "./Budget";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -22,26 +23,6 @@ import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl, iconRetinaUrl, shadowUrl });
-
-/** Escape HTML entities to prevent XSS in Leaflet popups */
-function escapeHtml(str: string): string {
-  const div = document.createElement("div");
-  div.appendChild(document.createTextNode(str));
-  return div.innerHTML;
-}
-
-const CATEGORY_ICONS: Record<string, string> = {
-  restaurant: "\uD83C\uDF74",
-  activity: "\u26F7\uFE0F",
-  lodging: "\uD83C\uDFE8",
-  transport: "\u2708\uFE0F",
-  sightseeing: "\uD83C\uDFDB\uFE0F",
-  general: "\uD83D\uDCCD",
-};
-
-function formatPrice(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
 
 function formatScheduledAt(iso: string): string {
   const d = new Date(iso);
@@ -304,22 +285,12 @@ export default function TripView() {
 
   const handleVote = async (pin: ActivityPin, vote: 1 | -1) => {
     try {
-      // If user already voted the same way, remove the vote (toggle off)
-      let newVotes;
       if (pin.votes.user_vote === vote) {
-        newVotes = await api.deleteVote(auth.token()!, params.tripId, pin.id);
+        await api.deleteVote(auth.token()!, params.tripId, pin.id);
       } else {
-        newVotes = await api.votePin(auth.token()!, params.tripId, pin.id, vote);
+        await api.votePin(auth.token()!, params.tripId, pin.id, vote);
       }
-      // Optimistic update: mutate the pin's votes in place instead of full refetch
-      const currentPins = pins();
-      if (currentPins) {
-        const updated = currentPins.map((p) =>
-          p.id === pin.id ? { ...p, votes: newVotes } : p
-        );
-        // Use refetch to get the server-confirmed state
-        refetchPins();
-      }
+      refetchPins();
     } catch (err: any) {
       console.error("Failed to vote:", err);
     }
@@ -341,12 +312,6 @@ export default function TripView() {
     } catch (err: any) {
       console.error("Failed to delete document:", err);
     }
-  };
-
-  const formatDate = (date: string | null) => {
-    if (!date) return "";
-    const d = new Date(date + "T00:00:00");
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
   return (

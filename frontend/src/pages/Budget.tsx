@@ -3,24 +3,10 @@ import {
   createResource,
   Show,
   For,
-  createEffect,
 } from "solid-js";
 import * as api from "../lib/api";
 import type { Expense } from "../lib/api";
-
-const CATEGORY_ICONS: Record<string, string> = {
-  restaurant: "\uD83C\uDF74",
-  activity: "\u26F7\uFE0F",
-  lodging: "\uD83C\uDFE8",
-  transport: "\u2708\uFE0F",
-  sightseeing: "\uD83C\uDFDB\uFE0F",
-  other: "\uD83D\uDCB0",
-  general: "\uD83D\uDCCD",
-};
-
-function formatPrice(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
+import { CATEGORY_ICONS, formatPrice } from "../lib/constants";
 
 export default function Budget(props: { tripId: string; token: string }) {
   const [expenses, { refetch }] = createResource(
@@ -42,18 +28,15 @@ export default function Budget(props: { tripId: string; token: string }) {
     return list.filter((e) => e.split_type === filter());
   };
 
-  const totalShared = () =>
-    (expenses() ?? [])
-      .filter((e) => e.split_type === "shared")
-      .reduce((sum, e) => sum + e.amount_cents, 0);
-
-  const totalPersonal = () =>
-    (expenses() ?? [])
-      .filter((e) => e.split_type === "personal")
-      .reduce((sum, e) => sum + e.amount_cents, 0);
-
-  const totalAll = () =>
-    (expenses() ?? []).reduce((sum, e) => sum + e.amount_cents, 0);
+  const totals = () => {
+    const list = expenses() ?? [];
+    let shared = 0, personal = 0;
+    for (const e of list) {
+      if (e.split_type === "shared") shared += e.amount_cents;
+      else personal += e.amount_cents;
+    }
+    return { shared, personal, all: shared + personal };
+  };
 
   const handleDelete = async (expenseId: string) => {
     try {
@@ -82,15 +65,15 @@ export default function Budget(props: { tripId: string; token: string }) {
       <div class="budget-summary">
         <div class="budget-summary-card budget-total">
           <span class="budget-card-label">TOTAL</span>
-          <span class="budget-card-amount">{formatPrice(totalAll())}</span>
+          <span class="budget-card-amount">{formatPrice(totals().all)}</span>
         </div>
         <div class="budget-summary-card budget-shared">
           <span class="budget-card-label">SHARED</span>
-          <span class="budget-card-amount">{formatPrice(totalShared())}</span>
+          <span class="budget-card-amount">{formatPrice(totals().shared)}</span>
         </div>
         <div class="budget-summary-card budget-personal">
           <span class="budget-card-label">PERSONAL</span>
-          <span class="budget-card-amount">{formatPrice(totalPersonal())}</span>
+          <span class="budget-card-amount">{formatPrice(totals().personal)}</span>
         </div>
       </div>
 
@@ -127,7 +110,7 @@ export default function Budget(props: { tripId: string; token: string }) {
       {/* Expense list */}
       <Show when={!expenses.loading} fallback={<p class="loading-text">Loading expenses...</p>}>
         <Show
-          when={(filteredExpenses() ?? []).length > 0}
+          when={filteredExpenses().length > 0}
           fallback={
             <div class="budget-empty-state">
               <p>No expenses yet</p>

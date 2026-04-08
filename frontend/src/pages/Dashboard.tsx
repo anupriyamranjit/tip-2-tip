@@ -3,6 +3,7 @@ import { onMount, createSignal, createResource, Show, For } from "solid-js";
 import { useAuth } from "../lib/auth";
 import * as api from "../lib/api";
 import type { Trip } from "../lib/api";
+import { formatDate, formatDateRange } from "../lib/constants";
 
 export default function Dashboard() {
   const auth = useAuth();
@@ -34,19 +35,6 @@ export default function Dashboard() {
     return all.filter(
       (t) => t.status === "proposed" || t.status === "confirmed"
     );
-  };
-
-  const formatDate = (date: string | null) => {
-    if (!date) return "";
-    const d = new Date(date + "T00:00:00");
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  };
-
-  const formatDateRange = (start: string | null, end: string | null) => {
-    if (!start && !end) return "Dates TBD";
-    if (start && end) return `${formatDate(start)} - ${formatDate(end)}`;
-    if (start) return `From ${formatDate(start)}`;
-    return `Until ${formatDate(end)}`;
   };
 
   return (
@@ -115,7 +103,7 @@ export default function Dashboard() {
             >
               <div class="trips-grid">
                 <For each={upcomingTrips()}>
-                  {(trip) => <TripCard trip={trip} formatDateRange={formatDateRange} />}
+                  {(trip) => <TripCard trip={trip} />}
                 </For>
               </div>
             </Show>
@@ -137,21 +125,19 @@ export default function Dashboard() {
   );
 }
 
-function TripCard(props: {
-  trip: Trip;
-  formatDateRange: (s: string | null, e: string | null) => string;
-}) {
+const COVER_IMAGES = [
+  "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=600&q=80",
+  "https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=600&q=80",
+  "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=600&q=80",
+  "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&q=80",
+];
+
+function TripCard(props: { trip: Trip }) {
   const navigate = useNavigate();
-  const coverImages = [
-    "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=600&q=80",
-    "https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=600&q=80",
-    "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=600&q=80",
-    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&q=80",
-  ];
 
   const coverUrl = () =>
     props.trip.cover_image_url ||
-    coverImages[Math.abs(hashCode(props.trip.id)) % coverImages.length];
+    COVER_IMAGES[Math.abs(hashCode(props.trip.id)) % COVER_IMAGES.length];
 
   return (
     <div class="trip-card" onClick={() => navigate(`/trips/${props.trip.id}`)}>
@@ -170,7 +156,7 @@ function TripCard(props: {
         </Show>
         <div class="trip-card-meta">
           <span class="trip-card-dates">
-            {props.formatDateRange(props.trip.start_date, props.trip.end_date)}
+            {formatDateRange(props.trip.start_date, props.trip.end_date)}
           </span>
           <span class="trip-card-members">
             {props.trip.member_count}{" "}
